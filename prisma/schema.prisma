@@ -1,15 +1,843 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// MULTI-TENANT POS — FULL PRISMA SCHEMA (MySQL)
+// =============================================================================
+// Tenancy model: shared database, row-level isolation via tenantId on every
+// tenant-scoped table. All primary keys are UUID strings (not auto-increment)
+// so offline terminals can generate valid, collision-free IDs before ever
+// talking to the server.
+//
+// Catalog design: variant-centric (Shopify/Square style). Every sellable
+// Product has at least one ProductVariant — even "simple" products get a
+// single default variant. This means InventoryItem, OrderItem, and recipes
+// (ProductComponent) all key off variantId consistently, with no nullable
+// variant fields scattered around the schema.
+// =============================================================================
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// TENANCY & BILLING
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id                 String                   @id @default(uuid())
+  name               String
+  subdomain          String                   @unique
+  plan               String                   @default("trial")
+  status             TenantStatus             @default(ACTIVE)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  subscription       Subscription?
+  locations          Location[]
+  terminals          Terminal[]
+  users              User[]
+  employeeShifts     EmployeeShift[]
+  categories         Category[]
+  products           Product[]
+  variants           ProductVariant[]
+  modifierGroups     ModifierGroup[]
+  suppliers          Supplier[]
+  purchaseOrders     PurchaseOrder[]
+  stockTransfers     StockTransfer[]
+  inventoryItems     InventoryItem[]
+  inventoryLogs      InventoryLog[]
+  customerGroups     CustomerGroup[]
+  customers          Customer[]
+  loyaltyProgram     LoyaltyProgram?
+  loyaltyTxns        LoyaltyTransaction[]
+  storeCreditTxns    StoreCreditTransaction[]
+  giftCards          GiftCard[]
+  promotions         Promotion[]
+  taxRates           TaxRate[]
+  orders             Order[]
+  refunds            Refund[]
+  cashDrawerSessions CashDrawerSession[]
+  auditLogs          AuditLog[]
+
+  @@index([status])
+}
+
+// Billing for the tenant's own subscription to YOUR platform (not their
+// customers' payments — that's the Payment model further down).
+model Subscription {
+  id                 String    @id @default(uuid())
+  tenantId           String    @unique
+  planCode           String // e.g. "starter", "pro", "enterprise"
+  billingProvider    String // "stripe", "paddle", etc.
+  externalCustomerId String?
+  externalSubId      String?
+  status             String    @default("trialing") // trialing | active | past_due | cancelled
+  currentPeriodEnd   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// LOCATIONS & DEVICES
+// ---------------------------------------------------------------------------
+
+model Location {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  address   String?
+  timezone  String   @default("UTC")
+  createdAt DateTime @default(now())
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  terminals          Terminal[]
+  inventoryItems     InventoryItem[]
+  orders             Order[]
+  employeeShifts     EmployeeShift[]
+  cashDrawerSessions CashDrawerSession[]
+  purchaseOrders     PurchaseOrder[]
+  transfersFrom      StockTransfer[]     @relation("TransferFromLocation")
+  transfersTo        StockTransfer[]     @relation("TransferToLocation")
+
+  @@index([tenantId])
+}
+
+// A registered physical/virtual register (web terminal, tablet, desktop
+// install). Tracking this gives you provenance on every order for debugging
+// offline sync issues, and a hook for remote device management later.
+model Terminal {
+  id               String    @id @default(uuid())
+  tenantId         String
+  locationId       String
+  name             String
+  deviceIdentifier String    @unique // hardware/app-instance fingerprint
+  platform         String? // "web" | "desktop" | "mobile"
+  lastSeenAt       DateTime?
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  location           Location            @relation(fields: [locationId], references: [id])
+  orders             Order[]
+  cashDrawerSessions CashDrawerSession[]
+
+  @@index([tenantId])
+}
+
+// Till open/close reconciliation — foundation for X-reports and Z-reports.
+model CashDrawerSession {
+  id             String           @id @default(uuid())
+  tenantId       String
+  locationId     String
+  terminalId     String?
+  openedByUserId String
+  openingFloat   Decimal          @db.Decimal(10, 2)
+  closingCash    Decimal?         @db.Decimal(10, 2)
+  expectedCash   Decimal?         @db.Decimal(10, 2)
+  difference     Decimal?         @db.Decimal(10, 2) // closingCash - expectedCash
+  status         CashDrawerStatus @default(OPEN)
+  openedAt       DateTime         @default(now())
+  closedAt       DateTime?
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  location Location  @relation(fields: [locationId], references: [id])
+  terminal Terminal? @relation(fields: [terminalId], references: [id])
+  openedBy User      @relation("DrawerOpenedBy", fields: [openedByUserId], references: [id])
+  orders   Order[]
+
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// USERS & EMPLOYEES
+// ---------------------------------------------------------------------------
+
+model User {
+  id             String   @id @default(uuid())
+  tenantId       String
+  name           String
+  email          String
+  passwordHash   String
+  pinCode        String? // fast cashier switching on shared terminals
+  role           Role     @default(CASHIER)
+  commissionRate Decimal? @db.Decimal(5, 4) // e.g. 0.05 = 5%, null = no commission
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  tenant               Tenant              @relation(fields: [tenantId], references: [id])
+  orders               Order[]             @relation("OrderCashier")
+  refundsProcessed     Refund[]            @relation("RefundProcessedBy")
+  shifts               EmployeeShift[]
+  drawerSessionsOpened CashDrawerSession[] @relation("DrawerOpenedBy")
+  purchaseOrdersMade   PurchaseOrder[]     @relation("PurchaseOrderCreatedBy")
+  transfersInitiated   StockTransfer[]     @relation("TransferInitiatedBy")
+  auditLogs            AuditLog[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model EmployeeShift {
+  id           String    @id @default(uuid())
+  tenantId     String
+  userId       String
+  locationId   String
+  clockIn      DateTime
+  clockOut     DateTime?
+  breakMinutes Int       @default(0)
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// CATALOG (variant-centric: every Product has >=1 ProductVariant)
+// ---------------------------------------------------------------------------
+
+model Category {
+  id       String     @id @default(uuid())
+  tenantId String
+  name     String
+  parentId String? // supports nested categories
+  tenant   Tenant     @relation(fields: [tenantId], references: [id])
+  parent   Category?  @relation("CategoryParent", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryParent")
+  products Product[]
+
+  @@index([tenantId])
+}
+
+model Product {
+  id             String   @id @default(uuid())
+  tenantId       String
+  categoryId     String?
+  name           String
+  description    String?  @db.Text
+  isComposite    Boolean  @default(false) // true = made from other variants (e.g. a Latte)
+  trackInventory Boolean  @default(true)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id])
+  category       Category?              @relation(fields: [categoryId], references: [id])
+  variants       ProductVariant[]
+  modifierGroups ProductModifierGroup[]
+
+  @@index([tenantId])
+}
+
+model ProductVariant {
+  id         String   @id @default(uuid())
+  tenantId   String
+  productId  String
+  sku        String
+  barcode    String?
+  attributes Json? // e.g. { "size": "M", "color": "Red" }
+  price      Decimal  @db.Decimal(10, 2)
+  cost       Decimal? @db.Decimal(10, 2) // for margin reporting
+  taxRateId  String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  product            Product             @relation(fields: [productId], references: [id])
+  taxRate            TaxRate?            @relation(fields: [taxRateId], references: [id])
+  inventoryItems     InventoryItem[]
+  orderItems         OrderItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  stockTransferItems StockTransferItem[]
+  inventoryLogs      InventoryLog[]
+  asComponentIn      ProductComponent[]  @relation("ComponentVariant")
+  components         ProductComponent[]  @relation("ParentVariant")
+
+  @@unique([tenantId, sku])
+  @@index([tenantId])
+  @@index([productId])
+}
+
+// Bill-of-materials for composite products, e.g. a "Latte" variant deducts
+// 0.2L of a "Milk" variant and 18g of a "Coffee Beans" variant on sale.
+model ProductComponent {
+  id                 String  @id @default(uuid())
+  parentVariantId    String
+  componentVariantId String
+  quantity           Decimal @db.Decimal(10, 3)
+
+  parentVariant    ProductVariant @relation("ParentVariant", fields: [parentVariantId], references: [id])
+  componentVariant ProductVariant @relation("ComponentVariant", fields: [componentVariantId], references: [id])
+
+  @@index([parentVariantId])
+}
+
+model ModifierGroup {
+  id        String @id @default(uuid())
+  tenantId  String
+  name      String // e.g. "Toppings", "Size Add-ons"
+  minSelect Int    @default(0)
+  maxSelect Int    @default(1)
+
+  tenant    Tenant                 @relation(fields: [tenantId], references: [id])
+  modifiers Modifier[]
+  products  ProductModifierGroup[]
+
+  @@index([tenantId])
+}
+
+model Modifier {
+  id              String  @id @default(uuid())
+  modifierGroupId String
+  name            String // e.g. "Extra Cheese"
+  priceAdjustment Decimal @default(0) @db.Decimal(10, 2)
+
+  modifierGroup ModifierGroup       @relation(fields: [modifierGroupId], references: [id])
+  orderItems    OrderItemModifier[]
+
+  @@index([modifierGroupId])
+}
+
+model ProductModifierGroup {
+  productId       String
+  modifierGroupId String
+
+  product       Product       @relation(fields: [productId], references: [id])
+  modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id])
+
+  @@id([productId, modifierGroupId])
+}
+
+// ---------------------------------------------------------------------------
+// INVENTORY & SUPPLY CHAIN
+// ---------------------------------------------------------------------------
+
+// Materialized snapshot of on-hand quantity per variant per location.
+// Source of truth is InventoryLog below; this can always be rebuilt from it.
+model InventoryItem {
+  id                String   @id @default(uuid())
+  tenantId          String
+  variantId         String
+  locationId        String
+  quantity          Decimal  @default(0) @db.Decimal(10, 3)
+  lowStockThreshold Decimal? @db.Decimal(10, 3)
+  updatedAt         DateTime @updatedAt
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id])
+  variant  ProductVariant @relation(fields: [variantId], references: [id])
+  location Location       @relation(fields: [locationId], references: [id])
+
+  @@unique([variantId, locationId])
+  @@index([tenantId])
+}
+
+// Append-only event log for every inventory change. Never mutate rows here —
+// this is what makes offline sync reconciliation and shrinkage auditing
+// possible without losing the "why did stock change" trail.
+model InventoryLog {
+  id          String   @id @default(uuid())
+  tenantId    String
+  variantId   String
+  locationId  String
+  changeQty   Decimal  @db.Decimal(10, 3) // negative = decrement, positive = increment
+  reason      String // sale | return | adjustment | transfer_in | transfer_out | purchase_order
+  referenceId String? // orderId / refundId / purchaseOrderId / stockTransferId that caused this
+  createdAt   DateTime @default(now())
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([tenantId])
+  @@index([variantId])
+}
+
+model Supplier {
+  id           String   @id @default(uuid())
+  tenantId     String
+  name         String
+  contactEmail String?
+  contactPhone String?
+  createdAt    DateTime @default(now())
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  purchaseOrders PurchaseOrder[]
+
+  @@index([tenantId])
+}
+
+model PurchaseOrder {
+  id          String              @id @default(uuid())
+  tenantId    String
+  supplierId  String
+  locationId  String
+  createdById String
+  status      PurchaseOrderStatus @default(DRAFT)
+  orderedAt   DateTime?
+  expectedAt  DateTime?
+  receivedAt  DateTime?
+  totalCost   Decimal             @default(0) @db.Decimal(10, 2)
+  createdAt   DateTime            @default(now())
+
+  tenant    Tenant              @relation(fields: [tenantId], references: [id])
+  supplier  Supplier            @relation(fields: [supplierId], references: [id])
+  location  Location            @relation(fields: [locationId], references: [id])
+  createdBy User                @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
+  items     PurchaseOrderItem[]
+
+  @@index([tenantId])
+}
+
+model PurchaseOrderItem {
+  id               String  @id @default(uuid())
+  purchaseOrderId  String
+  variantId        String
+  quantityOrdered  Decimal @db.Decimal(10, 3)
+  quantityReceived Decimal @default(0) @db.Decimal(10, 3)
+  unitCost         Decimal @db.Decimal(10, 2)
+
+  purchaseOrder PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id])
+  variant       ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([purchaseOrderId])
+}
+
+model StockTransfer {
+  id             String              @id @default(uuid())
+  tenantId       String
+  fromLocationId String
+  toLocationId   String
+  initiatedById  String
+  status         StockTransferStatus @default(PENDING)
+  createdAt      DateTime            @default(now())
+  completedAt    DateTime?
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id])
+  fromLocation Location            @relation("TransferFromLocation", fields: [fromLocationId], references: [id])
+  toLocation   Location            @relation("TransferToLocation", fields: [toLocationId], references: [id])
+  initiatedBy  User                @relation("TransferInitiatedBy", fields: [initiatedById], references: [id])
+  items        StockTransferItem[]
+
+  @@index([tenantId])
+}
+
+model StockTransferItem {
+  id              String  @id @default(uuid())
+  stockTransferId String
+  variantId       String
+  quantity        Decimal @db.Decimal(10, 3)
+
+  stockTransfer StockTransfer  @relation(fields: [stockTransferId], references: [id])
+  variant       ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([stockTransferId])
+}
+
+// ---------------------------------------------------------------------------
+// CUSTOMERS, LOYALTY & STORE CREDIT
+// ---------------------------------------------------------------------------
+
+model CustomerGroup {
+  id                 String  @id @default(uuid())
+  tenantId           String
+  name               String // e.g. "Wholesale", "VIP"
+  discountPercentage Decimal @default(0) @db.Decimal(5, 4)
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  customers Customer[]
+
+  @@index([tenantId])
+}
+
+model Customer {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  customerGroupId    String?
+  name               String
+  email              String?
+  phone              String?
+  marketingOptIn     Boolean  @default(false)
+  storeCreditBalance Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt          DateTime @default(now())
+
+  tenant          Tenant                   @relation(fields: [tenantId], references: [id])
+  customerGroup   CustomerGroup?           @relation(fields: [customerGroupId], references: [id])
+  orders          Order[]
+  loyaltyTxns     LoyaltyTransaction[]
+  storeCreditTxns StoreCreditTransaction[]
+  giftCardsIssued GiftCard[]
+
+  @@index([tenantId])
+}
+
+// One loyalty program config per tenant.
+model LoyaltyProgram {
+  id                    String  @id @default(uuid())
+  tenantId              String  @unique
+  pointsPerCurrencyUnit Decimal @default(1) @db.Decimal(10, 4) // points earned per $1 spent
+  redemptionRate        Decimal @default(0.01) @db.Decimal(10, 4) // $ value per point redeemed
+  isActive              Boolean @default(true)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+model LoyaltyTransaction {
+  id         String                 @id @default(uuid())
+  tenantId   String
+  customerId String
+  orderId    String?
+  type       LoyaltyTransactionType
+  points     Int
+  createdAt  DateTime               @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+  order    Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([tenantId])
+  @@index([customerId])
+}
+
+model StoreCreditTransaction {
+  id           String                     @id @default(uuid())
+  tenantId     String
+  customerId   String
+  orderId      String?
+  type         StoreCreditTransactionType
+  amount       Decimal                    @db.Decimal(10, 2)
+  balanceAfter Decimal                    @db.Decimal(10, 2)
+  createdAt    DateTime                   @default(now())
+  tenant       Tenant                     @relation(fields: [tenantId], references: [id])
+  customer     Customer                   @relation(fields: [customerId], references: [id])
+  order        Order?                     @relation(fields: [orderId], references: [id])
+
+  @@index([tenantId])
+  @@index([customerId])
+}
+
+// ---------------------------------------------------------------------------
+// GIFT CARDS & PROMOTIONS
+// ---------------------------------------------------------------------------
+
+model GiftCard {
+  id                 String    @id @default(uuid())
+  tenantId           String
+  code               String
+  initialBalance     Decimal   @db.Decimal(10, 2)
+  currentBalance     Decimal   @db.Decimal(10, 2)
+  issuedToCustomerId String?
+  isActive           Boolean   @default(true)
+  expiresAt          DateTime?
+  createdAt          DateTime  @default(now())
+
+  tenant       Tenant                @relation(fields: [tenantId], references: [id])
+  issuedTo     Customer?             @relation(fields: [issuedToCustomerId], references: [id])
+  transactions GiftCardTransaction[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model GiftCardTransaction {
+  id           String                  @id @default(uuid())
+  giftCardId   String
+  orderId      String?
+  type         GiftCardTransactionType
+  amount       Decimal                 @db.Decimal(10, 2)
+  balanceAfter Decimal                 @db.Decimal(10, 2)
+  createdAt    DateTime                @default(now())
+
+  giftCard GiftCard @relation(fields: [giftCardId], references: [id])
+  order    Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([giftCardId])
+}
+
+model Promotion {
+  id          String        @id @default(uuid())
+  tenantId    String
+  name        String
+  code        String? // null = automatic promotion, not coupon-triggered
+  type        PromotionType
+  value       Decimal       @db.Decimal(10, 2) // percentage (0-100) or fixed amount depending on type
+  minSubtotal Decimal?      @db.Decimal(10, 2)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  orderDiscounts OrderDiscount[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// TAX
+// ---------------------------------------------------------------------------
+
+model TaxRate {
+  id        String  @id @default(uuid())
+  tenantId  String
+  name      String // e.g. "Standard VAT", "Zero-rated"
+  rate      Decimal @db.Decimal(6, 4) // e.g. 0.16 = 16%
+  region    String?
+  isDefault Boolean @default(false)
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id])
+  variants ProductVariant[]
+
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// SALES: ORDERS, PAYMENTS, REFUNDS
+
+model Order {
+  id                  String       @id @default(uuid()) // also serves as the idempotency key
+  tenantId            String
+  orderNumber         Int          @unique @default(autoincrement()) // human-readable receipt number (globally sequential, not per-tenant)
+  locationId          String
+  terminalId          String?
+  cashDrawerSessionId String?
+  userId              String // cashier who rang up the sale
+  customerId          String?
+  channel             OrderChannel @default(POS)
+  status              OrderStatus  @default(OPEN)
+  subtotal            Decimal      @db.Decimal(10, 2)
+  discountTotal       Decimal      @default(0) @db.Decimal(10, 2)
+  taxTotal            Decimal      @db.Decimal(10, 2)
+  total               Decimal      @db.Decimal(10, 2)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  location          Location           @relation(fields: [locationId], references: [id])
+  terminal          Terminal?          @relation(fields: [terminalId], references: [id])
+  cashDrawerSession CashDrawerSession? @relation(fields: [cashDrawerSessionId], references: [id])
+  user              User               @relation("OrderCashier", fields: [userId], references: [id])
+  customer          Customer?          @relation(fields: [customerId], references: [id])
+
+  items           OrderItem[]
+  discounts       OrderDiscount[]
+  payments        Payment[]
+  refunds         Refund[]
+  loyaltyTxns     LoyaltyTransaction[]
+  storeCreditTxns StoreCreditTransaction[]
+  giftCardTxns    GiftCardTransaction[]
+
+  @@index([tenantId])
+  @@index([customerId])
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  variantId String
+  quantity  Decimal @db.Decimal(10, 3)
+  unitPrice Decimal @db.Decimal(10, 2)
+  taxAmount Decimal @db.Decimal(10, 2)
+  lineTotal Decimal @db.Decimal(10, 2)
+
+  order       Order               @relation(fields: [orderId], references: [id])
+  variant     ProductVariant      @relation(fields: [variantId], references: [id])
+  modifiers   OrderItemModifier[]
+  refundItems RefundItem[]
+
+  @@index([orderId])
+}
+
+model OrderItemModifier {
+  id              String  @id @default(uuid())
+  orderItemId     String
+  modifierId      String
+  priceAdjustment Decimal @db.Decimal(10, 2) // snapshot of price at time of sale
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id])
+  modifier  Modifier  @relation(fields: [modifierId], references: [id])
+
+  @@index([orderItemId])
+}
+
+// Applied discounts on an order — either from a Promotion or a manual
+// override (promotionId null), always tied to who approved it.
+model OrderDiscount {
+  id              String  @id @default(uuid())
+  orderId         String
+  promotionId     String?
+  appliedByUserId String
+  amount          Decimal @db.Decimal(10, 2)
+  reason          String?
+
+  order     Order      @relation(fields: [orderId], references: [id])
+  promotion Promotion? @relation(fields: [promotionId], references: [id])
+
+  @@index([orderId])
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  orderId        String
+  method         PaymentMethod
+  amount         Decimal       @db.Decimal(10, 2) // negative amount = refund payment
+  status         PaymentStatus @default(PENDING)
+  transactionRef String? // gateway reference for reconciliation
+  createdAt      DateTime      @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+}
+
+// A refund is its own record (not a mutation of the original order) so the
+// original sale stays intact for reporting/audit, and partial refunds are
+// straightforward to model.
+model Refund {
+  id                String   @id @default(uuid())
+  tenantId          String
+  orderId           String
+  processedByUserId String
+  reason            String?
+  totalAmount       Decimal  @db.Decimal(10, 2)
+  createdAt         DateTime @default(now())
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  order       Order        @relation(fields: [orderId], references: [id])
+  processedBy User         @relation("RefundProcessedBy", fields: [processedByUserId], references: [id])
+  items       RefundItem[]
+
+  @@index([tenantId])
+  @@index([orderId])
+}
+
+model RefundItem {
+  id          String  @id @default(uuid())
+  refundId    String
+  orderItemId String
+  quantity    Decimal @db.Decimal(10, 3)
+  amount      Decimal @db.Decimal(10, 2)
+
+  refund    Refund    @relation(fields: [refundId], references: [id])
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id])
+
+  @@index([refundId])
+}
+
+// -----------------------------------------------
+// AUDIT
+// ---------------------------------------------------------------------------
+
+// Generic audit trail: every price override, void, discount, refund, or
+// sensitive config change should write here in addition to its own table.
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  userId     String?
+  action     String // e.g. "order.void", "product.price_override", "discount.apply"
+  entityType String // e.g. "Order", "Product"
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
+}
+
+// ---------------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------------
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum Role {
+  OWNER
+  MANAGER
+  CASHIER
+  INVENTORY_CLERK
+  ACCOUNTANT
+}
+
+enum OrderStatus {
+  OPEN
+  PARKED
+  COMPLETED
+  VOIDED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum OrderChannel {
+  POS
+  ONLINE
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  GIFT_CARD
+  STORE_CREDIT
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum StockTransferStatus {
+  PENDING
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum CashDrawerStatus {
+  OPEN
+  CLOSED
+}
+
+enum LoyaltyTransactionType {
+  EARN
+  REDEEM
+  ADJUSTMENT
+  EXPIRE
+}
+
+enum StoreCreditTransactionType {
+  ISSUE
+  REDEEM
+  ADJUSTMENT
+}
+
+enum GiftCardTransactionType {
+  ISSUE
+  REDEEM
+  RELOAD
+  ADJUSTMENT
+}
+
+enum PromotionType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  BOGO
 }
