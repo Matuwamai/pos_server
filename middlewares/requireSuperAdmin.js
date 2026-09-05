@@ -1,20 +1,31 @@
+import jwt from 'jsonwebtoken';
 import ApiError from '../utils/ApiError.js';
  
-// PLACEHOLDER AUTH — tenant management is a platform-admin concern that
-// spans tenants, so the normal `authenticate` middleware (which resolves a
-// single req.tenantId from a tenant-scoped JWT) does not apply here.
-//
-// For now this checks a shared secret header so these routes aren't wide
-// open. Replace this with real super-admin authentication (e.g. a separate
-// admin-user table + its own JWT, or SSO) before going anywhere near
-// production — a static key in an env var is not an acceptable long-term
-// answer for endpoints that can suspend or cancel a paying customer.
+const JWT_SECRET = process.env.SUPER_ADMIN_JWT_SECRET;
+ 
+// Verifies a super-admin-issued JWT (obtained via POST /admin/admins/login).
+// Checked against a SEPARATE secret from tenant-user JWTs
+// (SUPER_ADMIN_JWT_SECRET vs JWT_SECRET) — a compromised tenant token can
+// never be replayed here, and vice versa, even if someone forgot the
+// `type` claim check below.
 function requireSuperAdmin(req, res, next) {
-  const key = req.headers['x-admin-key'];
-  if (!key || key !== process.env.SUPER_ADMIN_KEY) {
-    return next(ApiError.forbidden('Super-admin access required'));
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    return next(ApiError.unauthorized('Missing or malformed Authorization header'));
   }
-  return next();
+ 
+  const token = header.split(' ')[1];
+ 
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.type !== 'super_admin') {
+      return next(ApiError.forbidden('Super-admin access required'));
+    }
+    req.superAdmin = { id: payload.sub };
+    return next();
+  } catch (err) {
+    return next(ApiError.unauthorized('Invalid or expired token'));
+  }
 }
  
 export default requireSuperAdmin;
