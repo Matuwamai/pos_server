@@ -21,6 +21,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model SuperAdmin {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
 // ---------------------------------------------------------------------------
 // TENANCY & BILLING
 // ---------------------------------------------------------------------------

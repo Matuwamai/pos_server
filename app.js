@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import logger from './config/logger.js';
 import prisma from './config/prismaClient.js';
+import tenantRoutes from './routers/tenant.js';
  
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -19,9 +20,9 @@ const app = express();
  
 app.use(cors());
 app.use(express.json());
+app.use ('/api/v1/tenants', tenantRoutes);
  
 const PORT = process.env.PORT || 5000;
- 
 // Verify the database is actually reachable BEFORE accepting traffic.
 // A POS backend that starts "successfully" but can't reach MySQL is worse
 // than one that fails fast and loud — every request would 500 anyway.
