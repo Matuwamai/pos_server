@@ -18,6 +18,7 @@ import authRoutes from './routers/auth.js';
 import billingRoutes from './routers/billing.js';
 import locationRoutes from './routers/location.js';
 import terminalRoutes from './routers/terminal.js';
+import cashDrawerSessionRoutes from './routers/cashDrawerSession.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -41,6 +42,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/webhooks', billingRoutes);
 app.use('/api/v1/locations', locationRoutes);
 app.use('/api/v1/terminals', terminalRoutes);
+app.use('/api/v1/cash-drawer-sessions', cashDrawerSessionRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);
