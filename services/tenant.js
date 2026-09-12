@@ -12,19 +12,34 @@ async function createTenant({ name, subdomain, plan }) {
   if (existing) {
     throw ApiError.conflict('That subdomain is already taken');
   }
- 
+
+  const planCode = plan || 'trial';
+
   return prisma.$transaction(async (tx) => {
     const tenant = await tx.tenant.create({
-      data: { name, subdomain, plan: plan || 'trial' },
+      data: { name, subdomain, plan: planCode },
     });
- 
+
     // Every tenant gets a default location so onboarding never leaves a
     // tenant in a state where it has no location to attach products/orders
     // to. Businesses can rename or add more locations later.
     await tx.location.create({
       data: { tenantId: tenant.id, name: 'Main Location' },
     });
- 
+
+    // Also required so authenticate.js's billing check doesn't lock this
+    // tenant out before it has any real billing set up — mirrors the
+    // self-signup flow in auth.service.js. A super admin can move it off
+    // the trial period via the billing webhook/service once it's paying.
+    await tx.subscription.create({
+      data: {
+        tenantId: tenant.id,
+        planCode,
+        billingProvider: 'none',
+        currentPeriodEnd: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      },
+    });
+
     return tenant;
   });
 }

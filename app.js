@@ -15,6 +15,7 @@ import errorHandler from './middlewares/errorHandler.js';
 import tenantRoutes from './routers/tenant.js';
 import superAdminRoutes from './routers/superAdmin.js';
 import authRoutes from './routers/auth.js';
+import billingRoutes from './routers/billing.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -35,6 +36,7 @@ app.use(requestLogger);
 app.use ('/api/v1/tenants', tenantRoutes);
 app.use('/api/v1/super-admins', superAdminRoutes);
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/webhooks', billingRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);

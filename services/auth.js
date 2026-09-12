@@ -5,6 +5,7 @@ import ApiError from '../utils/ApiError.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
+const TRIAL_LENGTH_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 function signToken(user) {
   // `type: 'tenant_user'` mirrors the super-admin token's `type` claim —
@@ -32,6 +33,19 @@ async function signup({ tenantName, subdomain, ownerName, ownerEmail, ownerPassw
 
     await tx.location.create({
       data: { tenantId: tenant.id, name: 'Main Location' },
+    });
+
+    // Every tenant needs a Subscription row for authenticate.js's billing
+    // check to pass at all — without one, a brand-new tenant would be
+    // locked out before ever using the product. billingProvider stays
+    // 'none' until a real provider is wired up (see services/subscription.js).
+    await tx.subscription.create({
+      data: {
+        tenantId: tenant.id,
+        planCode: 'trial',
+        billingProvider: 'none',
+        currentPeriodEnd: new Date(Date.now() + TRIAL_LENGTH_MS),
+      },
     });
 
     const owner = await tx.user.create({

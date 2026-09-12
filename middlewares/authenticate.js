@@ -13,9 +13,11 @@ const JWT_SECRET = process.env.JWT_SECRET;
 //
 // Trusts tenantId/userId/role from the token itself rather than re-reading
 // the user row on every request (same tradeoff requireSuperAdmin.js makes).
-// Tenant status IS re-checked against the database on every request, since
-// that's the entire point of the suspend/cancel endpoints — a suspended
-// tenant's users must be locked out immediately, not just at next login.
+// Tenant status and subscription standing ARE re-checked against the
+// database on every request, since that's the entire point of the
+// suspend/cancel endpoints and of billing enforcement — a suspended tenant,
+// or one whose subscription has lapsed, must be locked out immediately, not
+// just at next login.
 const authenticate = asyncHandler(async (req, res, next) => {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
@@ -37,14 +39,33 @@ const authenticate = asyncHandler(async (req, res, next) => {
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: payload.tenantId },
-    select: { status: true },
+    select: {
+      status: true,
+      subscription: { select: { status: true, planCode: true, currentPeriodEnd: true } },
+    },
   });
   if (!tenant || tenant.status !== 'ACTIVE') {
     throw ApiError.forbidden('This tenant account is not active');
   }
 
+  // The webhook (services/subscription.js) is the primary way this stays
+  // current; currentPeriodEnd is checked here too as a fallback for a
+  // missed/delayed webhook, so a lapsed period can never grant access just
+  // because the provider hasn't told us yet.
+  const subscription = tenant.subscription;
+  const billingOk =
+    subscription &&
+    ['trialing', 'active'].includes(subscription.status) &&
+    (!subscription.currentPeriodEnd || subscription.currentPeriodEnd > new Date());
+  if (!billingOk) {
+    throw ApiError.paymentRequired('Your subscription has expired. Please renew to continue.', {
+      code: 'SUBSCRIPTION_EXPIRED',
+    });
+  }
+
   req.tenantId = payload.tenantId;
   req.user = { id: payload.sub, role: payload.role };
+  req.planCode = subscription.planCode;
 
   runWithTenant(payload.tenantId, next);
 });
