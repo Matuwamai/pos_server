@@ -1,7 +1,7 @@
 import express from 'express';
 import superAdminController from '../controllers/superAdmin.js';
 import requireSuperAdmin from '../middlewares/requireSuperAdmin.js';
-import validate from '../middleware/validate.js';
+import validate from '../middlewares/validate.js';
 import superAdminValidation from '../validations/superAdmin.js';
  
 const router = express.Router();

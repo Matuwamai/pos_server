@@ -1,40 +1,53 @@
+// Must be the very first import: ES module imports execute before any of
+// this file's own code runs, so if dotenv were loaded later, modules like
+// requireSuperAdmin.js (imported transitively below) would read their
+// process.env secrets as undefined and silently break auth.
+import 'dotenv/config';
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
+import helmet from "helmet";
+
+import env from './config/env.js';
 import logger from './config/logger.js';
 import prisma from './config/prismaClient.js';
+import requestLogger from './middlewares/requestLogger.js';
+import errorHandler from './middlewares/errorHandler.js';
 import tenantRoutes from './routers/tenant.js';
- 
+import superAdminRoutes from './routers/superAdmin.js';
+
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
   process.exit(1);
 });
- 
+
 process.on('unhandledRejection', (reason) => {
   logger.error('Unhandled promise rejection', { reason });
   process.exit(1);
 });
- 
-dotenv.config();
+
 const app = express();
- 
+
+app.use(helmet());
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger);
 app.use ('/api/v1/tenants', tenantRoutes);
- 
-const PORT = process.env.PORT || 5000;
-// Verify the database is actually reachable BEFORE accepting traffic.
-// A POS backend that starts "successfully" but can't reach MySQL is worse
-// than one that fails fast and loud — every request would 500 anyway.
+app.use('/api/v1/super-admins', superAdminRoutes);
+
+// Must be registered last, after all routes.
+app.use(errorHandler);
+
+const PORT = env.port;
+
 async function startServer() {
   try {
     await prisma.$connect();
     logger.info('Database connection established');
- 
+
     const server = app.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
     });
- 
+
     // Graceful shutdown: close the DB connection cleanly on deploy/restart
     process.on('SIGTERM', async () => {
       logger.info('SIGTERM received, shutting down gracefully');
@@ -50,6 +63,5 @@ async function startServer() {
     process.exit(1);
   }
 }
- 
+
 startServer();
- 

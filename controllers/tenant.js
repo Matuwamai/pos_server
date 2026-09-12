@@ -10,7 +10,7 @@ const create = asyncHandler(async (req, res) => {
 });
  
 const list = asyncHandler(async (req, res) => {
-  const result = await tenantService.listTenants(req.query);
+  const result = await tenantService.listTenants(req.validatedQuery);
   res.status(200).json(result);
 });
  

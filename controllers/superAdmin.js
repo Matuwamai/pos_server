@@ -1,5 +1,5 @@
 import asyncHandler from '../utils/asyncHandler.js';
-import superAdminService from '../services/superAdmin.service.js';
+import superAdminService from '../services/superAdmin.js';
  
 const login = asyncHandler(async (req, res) => {
   const result = await superAdminService.login(req.body);
