@@ -99,6 +99,7 @@ model Location {
   name      String
   address   String?
   timezone  String   @default("UTC")
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
   tenant             Tenant              @relation(fields: [tenantId], references: [id])
