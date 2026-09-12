@@ -22,6 +22,9 @@ import cashDrawerSessionRoutes from './routers/cashDrawerSession.js';
 import customerGroupRoutes from './routers/customerGroup.js';
 import customerRoutes from './routers/customer.js';
 import supplierRoutes from './routers/supplier.js';
+import categoryRoutes from './routers/category.js';
+import modifierGroupRoutes from './routers/modifierGroup.js';
+import productRoutes from './routers/product.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -49,6 +52,9 @@ app.use('/api/v1/cash-drawer-sessions', cashDrawerSessionRoutes);
 app.use('/api/v1/customer-groups', customerGroupRoutes);
 app.use('/api/v1/customers', customerRoutes);
 app.use('/api/v1/suppliers', supplierRoutes);
+app.use('/api/v1/categories', categoryRoutes);
+app.use('/api/v1/modifier-groups', modifierGroupRoutes);
+app.use('/api/v1/products', productRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);
