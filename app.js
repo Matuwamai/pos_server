@@ -14,6 +14,7 @@ import requestLogger from './middlewares/requestLogger.js';
 import errorHandler from './middlewares/errorHandler.js';
 import tenantRoutes from './routers/tenant.js';
 import superAdminRoutes from './routers/superAdmin.js';
+import authRoutes from './routers/auth.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -33,6 +34,7 @@ app.use(express.json());
 app.use(requestLogger);
 app.use ('/api/v1/tenants', tenantRoutes);
 app.use('/api/v1/super-admins', superAdminRoutes);
+app.use('/api/v1/auth', authRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);
