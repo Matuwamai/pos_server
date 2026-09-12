@@ -7,8 +7,8 @@ const create = asyncHandler(async (req, res) => {
 });
 
 const list = asyncHandler(async (req, res) => {
-  const terminals = await terminalService.listTerminals(req.validatedQuery.locationId);
-  res.status(200).json(terminals);
+  const result = await terminalService.listTerminals(req.validatedQuery);
+  res.status(200).json(result);
 });
 
 const getById = asyncHandler(async (req, res) => {

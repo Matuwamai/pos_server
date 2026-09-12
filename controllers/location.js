@@ -7,8 +7,8 @@ const create = asyncHandler(async (req, res) => {
 });
 
 const list = asyncHandler(async (req, res) => {
-  const locations = await locationService.listLocations();
-  res.status(200).json(locations);
+  const result = await locationService.listLocations(req.validatedQuery);
+  res.status(200).json(result);
 });
 
 const getById = asyncHandler(async (req, res) => {

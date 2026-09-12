@@ -4,9 +4,11 @@ const idParams = z.object({ id: z.string().uuid() });
 
 const create = {
   body: z.object({
+    customerGroupId: z.string().uuid().optional(),
     name: z.string().min(2).max(120),
-    address: z.string().max(255).optional(),
-    timezone: z.string().min(1).max(64).optional(),
+    email: z.string().email().optional(),
+    phone: z.string().min(1).max(32).optional(),
+    marketingOptIn: z.coerce.boolean().optional(),
   }),
 };
 
@@ -16,19 +18,25 @@ const getById = {
 
 const list = {
   query: z.object({
-    search: z.string().min(1).max(120).optional(), // matches against name OR address
+    search: z.string().min(1).max(120).optional(), // matches against name, email, OR phone
+    customerGroupId: z.string().uuid().optional(),
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().positive().max(100).default(20),
   }),
 };
 
+// storeCreditBalance is deliberately not editable here — it's only ever
+// changed through StoreCreditTransaction, so there's always an auditable
+// reason for every change to it.
 const update = {
   params: idParams,
   body: z
     .object({
+      customerGroupId: z.string().uuid().nullable().optional(),
       name: z.string().min(2).max(120).optional(),
-      address: z.string().max(255).optional(),
-      timezone: z.string().min(1).max(64).optional(),
+      email: z.string().email().optional(),
+      phone: z.string().min(1).max(32).optional(),
+      marketingOptIn: z.coerce.boolean().optional(),
     })
     .refine((data) => Object.keys(data).length > 0, {
       message: 'At least one field must be provided',

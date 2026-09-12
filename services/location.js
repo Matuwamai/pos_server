@@ -1,6 +1,7 @@
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import { planHasFeature } from '../config/plans.js';
+import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
 // tenantId is never passed explicitly in here — the tenant-scoping Prisma
 // extension injects it from the request's AsyncLocalStorage context on
@@ -20,8 +21,19 @@ async function createLocation(planCode, { name, address, timezone }) {
   return prisma.location.create({ data: { name, address, timezone } });
 }
 
-async function listLocations() {
-  return prisma.location.findMany({ where: { isActive: true }, orderBy: { createdAt: 'asc' } });
+async function listLocations({ search, page, limit }) {
+  const where = { isActive: true, ...searchFilter(search, ['name', 'address']) };
+
+  const [total, locations] = await prisma.$transaction([
+    prisma.location.count({ where }),
+    prisma.location.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      ...getPagination({ page, limit }),
+    }),
+  ]);
+
+  return { data: locations, pagination: buildPaginationMeta({ page, limit, total }) };
 }
 
 async function getLocationById(id) {

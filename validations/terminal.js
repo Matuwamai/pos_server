@@ -15,6 +15,9 @@ const create = {
 const list = {
   query: z.object({
     locationId: z.string().uuid().optional(),
+    search: z.string().min(1).max(120).optional(), // matches against name OR deviceIdentifier
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(100).default(20),
   }),
 };
 

@@ -2,6 +2,7 @@ import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import locationService from './location.js';
 import terminalService from './terminal.js';
+import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 
 // tenantId is never passed explicitly — the tenant-scoping Prisma extension
 // injects it from the request context, same as location.service.js.
@@ -58,14 +59,13 @@ async function listSessions({ locationId, terminalId, status, page, limit }) {
     prisma.cashDrawerSession.findMany({
       where,
       orderBy: { openedAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
+      ...getPagination({ page, limit }),
     }),
   ]);
 
   return {
     data: sessions,
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: buildPaginationMeta({ page, limit, total }),
   };
 }
 

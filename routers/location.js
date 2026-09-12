@@ -9,7 +9,7 @@ const router = express.Router();
 
 router.use(authenticate);
 
-router.get('/', locationController.list);
+router.get('/', validate(locationValidation.list), locationController.list);
 router.get('/:id', validate(locationValidation.getById), locationController.getById);
 
 // Management actions are OWNER/MANAGER only — cashiers can see locations

@@ -1,6 +1,7 @@
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import locationService from './location.js';
+import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
 // Same rule as location.service.js: tenantId is never passed explicitly —
 // the tenant-scoping Prisma extension injects it from the request context.
@@ -13,11 +14,23 @@ async function createTerminal({ locationId, name, deviceIdentifier, platform }) 
   });
 }
 
-async function listTerminals(locationId) {
-  return prisma.terminal.findMany({
-    where: { isActive: true, ...(locationId ? { locationId } : {}) },
-    orderBy: { createdAt: 'asc' },
-  });
+async function listTerminals({ locationId, search, page, limit }) {
+  const where = {
+    isActive: true,
+    ...(locationId ? { locationId } : {}),
+    ...searchFilter(search, ['name', 'deviceIdentifier']),
+  };
+
+  const [total, terminals] = await prisma.$transaction([
+    prisma.terminal.count({ where }),
+    prisma.terminal.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      ...getPagination({ page, limit }),
+    }),
+  ]);
+
+  return { data: terminals, pagination: buildPaginationMeta({ page, limit, total }) };
 }
 
 async function getTerminalById(id) {

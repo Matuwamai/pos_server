@@ -1,5 +1,6 @@
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
+import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
  
 // NOTE ON AUTH: these operations are platform-admin actions that span
 // tenants — they are NOT protected by the normal `authenticate` middleware
@@ -63,37 +64,24 @@ async function listTenants({ search, status, plan, page, limit, sortBy, sortOrde
   const where = {
     ...(status ? { status } : {}),
     ...(plan ? { plan } : {}),
-    ...(search
-      ? {
-          OR: [
-            { name: { contains: search } },
-            { subdomain: { contains: search } },
-          ],
-        }
-      : {}),
+    ...searchFilter(search, ['name', 'subdomain']),
   };
- 
+
   const [total, tenants] = await prisma.$transaction([
     prisma.tenant.count({ where }),
     prisma.tenant.findMany({
       where,
       orderBy: { [sortBy]: sortOrder },
-      skip: (page - 1) * limit,
-      take: limit,
+      ...getPagination({ page, limit }),
       include: {
         _count: { select: { users: true, locations: true } },
       },
     }),
   ]);
- 
+
   return {
     data: tenants,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
+    pagination: buildPaginationMeta({ page, limit, total }),
   };
 }
  
