@@ -61,4 +61,4 @@ async function listTransactions({ customerId, type, page, limit }) {
   return { data: transactions, pagination: buildPaginationMeta({ page, limit, total }) };
 }
 
-export default { issueCredit, redeemCredit, adjustCredit, listTransactions };
+export default { applyStoreCreditChange, issueCredit, redeemCredit, adjustCredit, listTransactions };

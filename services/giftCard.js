@@ -130,6 +130,8 @@ async function listTransactions(giftCardId) {
 }
 
 export default {
+  applyGiftCardChange,
+  assertUsable,
   issueGiftCard,
   getGiftCardById,
   getCardByCode,
