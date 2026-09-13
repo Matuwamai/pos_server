@@ -37,6 +37,7 @@ import taxRateRoutes from './routers/taxRate.js';
 import orderRoutes from './routers/order.js';
 import employeeShiftRoutes from './routers/employeeShift.js';
 import auditLogRoutes from './routers/auditLog.js';
+import paymentRoutes from './routers/payment.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -79,6 +80,7 @@ app.use('/api/v1/tax-rates', taxRateRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/employee-shifts', employeeShiftRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
+app.use('/api/v1/payments', paymentRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);
