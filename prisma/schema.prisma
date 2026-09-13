@@ -105,6 +105,7 @@ model Location {
   tenant             Tenant              @relation(fields: [tenantId], references: [id])
   terminals          Terminal[]
   inventoryItems     InventoryItem[]
+  inventoryLogs      InventoryLog[]
   orders             Order[]
   employeeShifts     EmployeeShift[]
   cashDrawerSessions CashDrawerSession[]
@@ -360,11 +361,13 @@ model InventoryLog {
   referenceId String? // orderId / refundId / purchaseOrderId / stockTransferId that caused this
   createdAt   DateTime @default(now())
 
-  tenant  Tenant         @relation(fields: [tenantId], references: [id])
-  variant ProductVariant @relation(fields: [variantId], references: [id])
+  tenant   Tenant         @relation(fields: [tenantId], references: [id])
+  variant  ProductVariant @relation(fields: [variantId], references: [id])
+  location Location       @relation(fields: [locationId], references: [id])
 
   @@index([tenantId])
   @@index([variantId])
+  @@index([locationId])
 }
 
 model Supplier {

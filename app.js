@@ -25,6 +25,9 @@ import supplierRoutes from './routers/supplier.js';
 import categoryRoutes from './routers/category.js';
 import modifierGroupRoutes from './routers/modifierGroup.js';
 import productRoutes from './routers/product.js';
+import inventoryRoutes from './routers/inventory.js';
+import purchaseOrderRoutes from './routers/purchaseOrder.js';
+import stockTransferRoutes from './routers/stockTransfer.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -55,6 +58,9 @@ app.use('/api/v1/suppliers', supplierRoutes);
 app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/modifier-groups', modifierGroupRoutes);
 app.use('/api/v1/products', productRoutes);
+app.use('/api/v1/inventory', inventoryRoutes);
+app.use('/api/v1/purchase-orders', purchaseOrderRoutes);
+app.use('/api/v1/stock-transfers', stockTransferRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);
