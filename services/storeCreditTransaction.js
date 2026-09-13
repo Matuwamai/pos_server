@@ -1,6 +1,7 @@
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import customerService from './customer.js';
+import auditLogService from './auditLog.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 
 // Unlike loyalty points, Customer.storeCreditBalance IS materialized —
@@ -40,9 +41,19 @@ async function redeemCredit({ customerId, orderId, amount }) {
   return prisma.$transaction((tx) => applyStoreCreditChange(tx, { customerId, orderId, type: 'REDEEM', amount: -amount }));
 }
 
-async function adjustCredit({ customerId, amount }) {
+async function adjustCredit({ customerId, amount }, actingUser) {
   await customerService.getCustomerById(customerId);
-  return prisma.$transaction((tx) => applyStoreCreditChange(tx, { customerId, type: 'ADJUSTMENT', amount }));
+  return prisma.$transaction(async (tx) => {
+    const txn = await applyStoreCreditChange(tx, { customerId, type: 'ADJUSTMENT', amount });
+    await auditLogService.recordAuditLog(tx, {
+      userId: actingUser.id,
+      action: 'storeCredit.adjust',
+      entityType: 'Customer',
+      entityId: customerId,
+      metadata: { amount, storeCreditTransactionId: txn.id },
+    });
+    return txn;
+  });
 }
 
 async function listTransactions({ customerId, type, page, limit }) {

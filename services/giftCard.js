@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import customerService from './customer.js';
+import auditLogService from './auditLog.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
 const giftCardInclude = { issuedTo: { select: { id: true, name: true } } };
@@ -107,9 +108,19 @@ async function reloadGiftCard({ code, amount }) {
 
 // Admin correction — deliberately bypasses the active/expiry checks that
 // gate redeem/reload, same reasoning as loyalty/store-credit adjustments.
-async function adjustGiftCard(id, amount) {
+async function adjustGiftCard(id, amount, actingUser) {
   const giftCard = await getGiftCardById(id);
-  return prisma.$transaction((tx) => applyGiftCardChange(tx, { giftCard, type: 'ADJUSTMENT', amount }));
+  return prisma.$transaction(async (tx) => {
+    const txn = await applyGiftCardChange(tx, { giftCard, type: 'ADJUSTMENT', amount });
+    await auditLogService.recordAuditLog(tx, {
+      userId: actingUser.id,
+      action: 'giftCard.adjust',
+      entityType: 'GiftCard',
+      entityId: id,
+      metadata: { amount, giftCardTransactionId: txn.id },
+    });
+    return txn;
+  });
 }
 
 async function deactivateGiftCard(id) {

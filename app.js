@@ -35,6 +35,8 @@ import giftCardRoutes from './routers/giftCard.js';
 import promotionRoutes from './routers/promotion.js';
 import taxRateRoutes from './routers/taxRate.js';
 import orderRoutes from './routers/order.js';
+import employeeShiftRoutes from './routers/employeeShift.js';
+import auditLogRoutes from './routers/auditLog.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -75,6 +77,8 @@ app.use('/api/v1/gift-cards', giftCardRoutes);
 app.use('/api/v1/promotions', promotionRoutes);
 app.use('/api/v1/tax-rates', taxRateRoutes);
 app.use('/api/v1/orders', orderRoutes);
+app.use('/api/v1/employee-shifts', employeeShiftRoutes);
+app.use('/api/v1/audit-logs', auditLogRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);

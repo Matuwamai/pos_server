@@ -17,7 +17,7 @@ const update = asyncHandler(async (req, res) => {
 });
 
 const adjust = asyncHandler(async (req, res) => {
-  const item = await inventoryService.adjustInventory(req.body);
+  const item = await inventoryService.adjustInventory(req.body, req.user);
   res.status(200).json(item);
 });
 

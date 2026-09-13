@@ -27,7 +27,7 @@ const reload = asyncHandler(async (req, res) => {
 });
 
 const adjust = asyncHandler(async (req, res) => {
-  const txn = await giftCardService.adjustGiftCard(req.params.id, req.body.amount);
+  const txn = await giftCardService.adjustGiftCard(req.params.id, req.body.amount, req.user);
   res.status(201).json(txn);
 });
 

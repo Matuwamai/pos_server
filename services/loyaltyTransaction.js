@@ -2,6 +2,7 @@ import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import customerService from './customer.js';
 import loyaltyProgramService from './loyaltyProgram.js';
+import auditLogService from './auditLog.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 
 // There's no materialized points balance on Customer (unlike
@@ -55,7 +56,7 @@ async function redeemPoints({ customerId, orderId, points }) {
   });
 }
 
-async function adjustPoints({ customerId, points }) {
+async function adjustPoints({ customerId, points }, actingUser) {
   await assertProgramActive();
   await customerService.getCustomerById(customerId);
 
@@ -65,7 +66,15 @@ async function adjustPoints({ customerId, points }) {
     if (balance + points < 0) {
       throw ApiError.conflict(`This adjustment would take the balance negative (currently ${balance})`);
     }
-    return tx.loyaltyTransaction.create({ data: { customerId, type: 'ADJUSTMENT', points } });
+    const txn = await tx.loyaltyTransaction.create({ data: { customerId, type: 'ADJUSTMENT', points } });
+    await auditLogService.recordAuditLog(tx, {
+      userId: actingUser.id,
+      action: 'loyalty.adjust',
+      entityType: 'Customer',
+      entityId: customerId,
+      metadata: { points, loyaltyTransactionId: txn.id },
+    });
+    return txn;
   });
 }
 

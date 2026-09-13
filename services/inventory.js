@@ -1,5 +1,6 @@
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
+import auditLogService from './auditLog.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
 const itemInclude = {
@@ -32,8 +33,18 @@ async function applyInventoryChange(tx, { variantId, locationId, changeQty, reas
   });
 }
 
-async function adjustInventory({ variantId, locationId, changeQty, reason }) {
-  return prisma.$transaction((tx) => applyInventoryChange(tx, { variantId, locationId, changeQty, reason }));
+async function adjustInventory({ variantId, locationId, changeQty, reason }, actingUser) {
+  return prisma.$transaction(async (tx) => {
+    const item = await applyInventoryChange(tx, { variantId, locationId, changeQty, reason });
+    await auditLogService.recordAuditLog(tx, {
+      userId: actingUser.id,
+      action: 'inventory.adjust',
+      entityType: 'InventoryItem',
+      entityId: item.id,
+      metadata: { variantId, locationId, changeQty, reason },
+    });
+    return item;
+  });
 }
 
 async function listInventory({ search, locationId, variantId, lowStockOnly, page, limit }) {

@@ -12,7 +12,7 @@ const redeem = asyncHandler(async (req, res) => {
 });
 
 const adjust = asyncHandler(async (req, res) => {
-  const txn = await loyaltyTransactionService.adjustPoints(req.body);
+  const txn = await loyaltyTransactionService.adjustPoints(req.body, req.user);
   res.status(201).json(txn);
 });
 

@@ -9,6 +9,7 @@ import promotionService from './promotion.js';
 import taxRateService from './taxRate.js';
 import storeCreditTransactionService from './storeCreditTransaction.js';
 import giftCardService from './giftCard.js';
+import auditLogService from './auditLog.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 
 // Scope note: orders are built client-side (a till app manages its own cart)
@@ -254,6 +255,17 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
 
     if (discountRows.length > 0) {
       await tx.orderDiscount.createMany({ data: discountRows.map((d) => ({ orderId: order.id, ...d })) });
+      for (const d of discountRows) {
+        if (!d.promotionId) {
+          await auditLogService.recordAuditLog(tx, {
+            userId: actingUser.id,
+            action: 'order.discount.manual',
+            entityType: 'Order',
+            entityId: order.id,
+            metadata: { amount: d.amount, reason: d.reason },
+          });
+        }
+      }
     }
 
     for (const payment of payments) {
@@ -355,6 +367,14 @@ async function refundOrder(id, actingUser, { items, reason, refundMethod, giftCa
     totalAmount = round2(totalAmount);
 
     const refund = await tx.refund.create({ data: { orderId: order.id, processedByUserId: actingUser.id, reason, totalAmount } });
+
+    await auditLogService.recordAuditLog(tx, {
+      userId: actingUser.id,
+      action: 'order.refund',
+      entityType: 'Refund',
+      entityId: refund.id,
+      metadata: { orderId: order.id, totalAmount, refundMethod, reason },
+    });
 
     await tx.refundItem.createMany({
       data: validated.map((v) => ({ refundId: refund.id, orderItemId: v.orderItemId, quantity: v.quantity, amount: v.amount })),
