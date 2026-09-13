@@ -605,6 +605,7 @@ model TaxRate {
   rate      Decimal @db.Decimal(6, 4) // e.g. 0.16 = 16%
   region    String?
   isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
 
   tenant   Tenant           @relation(fields: [tenantId], references: [id])
   variants ProductVariant[]

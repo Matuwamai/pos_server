@@ -31,6 +31,9 @@ import stockTransferRoutes from './routers/stockTransfer.js';
 import loyaltyProgramRoutes from './routers/loyaltyProgram.js';
 import loyaltyTransactionRoutes from './routers/loyaltyTransaction.js';
 import storeCreditTransactionRoutes from './routers/storeCreditTransaction.js';
+import giftCardRoutes from './routers/giftCard.js';
+import promotionRoutes from './routers/promotion.js';
+import taxRateRoutes from './routers/taxRate.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -67,6 +70,9 @@ app.use('/api/v1/stock-transfers', stockTransferRoutes);
 app.use('/api/v1/loyalty-program', loyaltyProgramRoutes);
 app.use('/api/v1/loyalty-transactions', loyaltyTransactionRoutes);
 app.use('/api/v1/store-credit-transactions', storeCreditTransactionRoutes);
+app.use('/api/v1/gift-cards', giftCardRoutes);
+app.use('/api/v1/promotions', promotionRoutes);
+app.use('/api/v1/tax-rates', taxRateRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);
