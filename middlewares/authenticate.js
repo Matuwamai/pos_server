@@ -11,13 +11,13 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // compromised tenant token can never be replayed against super-admin routes,
 // and vice versa, even without the `type` claim check below.
 //
-// Trusts tenantId/userId/role from the token itself rather than re-reading
-// the user row on every request (same tradeoff requireSuperAdmin.js makes).
-// Tenant status and subscription standing ARE re-checked against the
-// database on every request, since that's the entire point of the
-// suspend/cancel endpoints and of billing enforcement — a suspended tenant,
-// or one whose subscription has lapsed, must be locked out immediately, not
-// just at next login.
+// Trusts tenantId/sub/role (the legacy enum) straight from the JWT, same
+// tradeoff requireSuperAdmin.js makes. But tenant status, subscription
+// standing, the user's own isActive flag, and — new here — permissions are
+// ALL re-derived from the database on every request in one query: a
+// suspended tenant, a lapsed subscription, a deactivated user, or a
+// permission an owner just revoked all need to take effect immediately,
+// not just at next login.
 const authenticate = asyncHandler(async (req, res, next) => {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
@@ -37,22 +37,36 @@ const authenticate = asyncHandler(async (req, res, next) => {
     throw ApiError.forbidden('Tenant access required');
   }
 
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: payload.tenantId },
+  const user = await prisma.user.findUnique({
+    where: { id: payload.sub },
     select: {
-      status: true,
-      subscription: { select: { status: true, planCode: true, currentPeriodEnd: true } },
+      isActive: true,
+      tenant: {
+        select: {
+          status: true,
+          subscription: { select: { status: true, planCode: true, currentPeriodEnd: true } },
+        },
+      },
+      assignedRole: {
+        select: { isActive: true, permissions: { select: { permission: { select: { code: true } } } } },
+      },
     },
   });
-  if (!tenant || tenant.status !== 'ACTIVE') {
+  if (!user) {
+    throw ApiError.unauthorized('Invalid or expired token');
+  }
+  if (!user.tenant || user.tenant.status !== 'ACTIVE') {
     throw ApiError.forbidden('This tenant account is not active');
+  }
+  if (!user.isActive) {
+    throw ApiError.unauthorized('This user account is no longer active');
   }
 
   // The webhook (services/subscription.js) is the primary way this stays
   // current; currentPeriodEnd is checked here too as a fallback for a
   // missed/delayed webhook, so a lapsed period can never grant access just
   // because the provider hasn't told us yet.
-  const subscription = tenant.subscription;
+  const subscription = user.tenant.subscription;
   const billingOk =
     subscription &&
     ['trialing', 'active'].includes(subscription.status) &&
@@ -63,9 +77,18 @@ const authenticate = asyncHandler(async (req, res, next) => {
     });
   }
 
+  // Empty until the user is assigned a dynamic Role (or if that role gets
+  // deactivated) — harmless today since no route checks req.permissions
+  // yet, see middlewares/requirePermission.js.
+  const permissions =
+    user.assignedRole && user.assignedRole.isActive
+      ? new Set(user.assignedRole.permissions.map((rp) => rp.permission.code))
+      : new Set();
+
   req.tenantId = payload.tenantId;
   req.user = { id: payload.sub, role: payload.role };
   req.planCode = subscription.planCode;
+  req.permissions = permissions;
 
   runWithTenant(payload.tenantId, next);
 });

@@ -39,6 +39,9 @@ import employeeShiftRoutes from './routers/employeeShift.js';
 import auditLogRoutes from './routers/auditLog.js';
 import paymentRoutes from './routers/payment.js';
 import userRoutes from './routers/user.js';
+import roleRoutes from './routers/role.js';
+import permissionRoutes from './routers/permission.js';
+import apiKeyRoutes from './routers/apiKey.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -83,6 +86,9 @@ app.use('/api/v1/employee-shifts', employeeShiftRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
 app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/roles', roleRoutes);
+app.use('/api/v1/permissions', permissionRoutes);
+app.use('/api/v1/api-keys', apiKeyRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);

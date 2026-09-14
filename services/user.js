@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import auditLogService from './auditLog.js';
+import roleService from './role.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
 const PRIVILEGED_ROLES = ['OWNER', 'MANAGER'];
@@ -26,8 +27,11 @@ function assertCanModifyTarget(actingUser, targetUser) {
   }
 }
 
-async function createUser(actingUser, { name, email, password, role, pinCode, commissionRate }) {
+async function createUser(actingUser, { name, email, password, role, assignedRoleId, pinCode, commissionRate }) {
   assertCanAssignRole(actingUser, role);
+  if (assignedRoleId) {
+    await roleService.getRoleRaw(assignedRoleId); // 404s if missing/foreign tenant
+  }
 
   const existing = await prisma.user.findFirst({ where: { email } });
   if (existing) throw ApiError.conflict('A user with this email already exists');
@@ -35,7 +39,7 @@ async function createUser(actingUser, { name, email, password, role, pinCode, co
   const passwordHash = await bcrypt.hash(password, 10);
 
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({ data: { name, email, passwordHash, role, pinCode, commissionRate } });
+    const user = await tx.user.create({ data: { name, email, passwordHash, role, assignedRoleId, pinCode, commissionRate } });
     await auditLogService.recordAuditLog(tx, {
       userId: actingUser.id,
       action: 'user.create',
@@ -78,6 +82,9 @@ async function updateUser(actingUser, id, updates) {
   assertCanModifyTarget(actingUser, user);
   if (updates.role) {
     assertCanAssignRole(actingUser, updates.role);
+  }
+  if (updates.assignedRoleId) {
+    await roleService.getRoleRaw(updates.assignedRoleId); // 404s if missing/foreign tenant
   }
   if (updates.email) {
     const existing = await prisma.user.findFirst({ where: { email: updates.email, NOT: { id } } });

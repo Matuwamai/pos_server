@@ -1,5 +1,6 @@
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
+import roleService from './role.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
  
 // NOTE ON AUTH: these operations are platform-admin actions that span
@@ -40,6 +41,11 @@ async function createTenant({ name, subdomain, plan }) {
         currentPeriodEnd: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
       },
     });
+
+    // Seeded even though there's no owner user yet (this path never
+    // creates one, see the note above) — so the roles already exist
+    // whenever one is eventually added.
+    await roleService.seedDefaultRolesForTenant(tx, tenant.id);
 
     return tenant;
   });

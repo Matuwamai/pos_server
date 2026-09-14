@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
+import roleService from './role.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
@@ -48,6 +49,11 @@ async function signup({ tenantName, subdomain, ownerName, ownerEmail, ownerPassw
       },
     });
 
+    // Seeds the 5 default roles (config/defaultRolePermissions.js) for this
+    // tenant so the owner has a real, editable Role from day one instead of
+    // only ever having the legacy enum value.
+    const roleIdByName = await roleService.seedDefaultRolesForTenant(tx, tenant.id);
+
     const owner = await tx.user.create({
       data: {
         tenantId: tenant.id,
@@ -55,6 +61,7 @@ async function signup({ tenantName, subdomain, ownerName, ownerEmail, ownerPassw
         email: ownerEmail,
         passwordHash,
         role: 'OWNER',
+        assignedRoleId: roleIdByName.OWNER,
       },
     });
 

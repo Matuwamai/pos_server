@@ -68,6 +68,8 @@ model Tenant {
   refunds            Refund[]
   cashDrawerSessions CashDrawerSession[]
   auditLogs          AuditLog[]
+  roles              Role[]
+  apiKeys            ApiKey[]
 
   @@index([status])
 }
@@ -167,18 +169,20 @@ model CashDrawerSession {
 // ---------------------------------------------------------------------------
 
 model User {
-  id             String   @id @default(uuid())
+  id             String     @id @default(uuid())
   tenantId       String
   name           String
   email          String
   passwordHash   String
   pinCode        String? // fast cashier switching on shared terminals
-  role           Role     @default(CASHIER)
-  commissionRate Decimal? @db.Decimal(5, 4) // e.g. 0.05 = 5%, null = no commission
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
+  role           LegacyRole @default(CASHIER) // being phased out in favor of assignedRole; kept so existing requireRole() routes are unaffected during the migration
+  assignedRoleId String? // the new tenant-defined Role; nullable until every user is backfilled
+  commissionRate Decimal?   @db.Decimal(5, 4) // e.g. 0.05 = 5%, null = no commission
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
 
   tenant               Tenant              @relation(fields: [tenantId], references: [id])
+  assignedRole         Role?               @relation(fields: [assignedRoleId], references: [id])
   orders               Order[]             @relation("OrderCashier")
   refundsProcessed     Refund[]            @relation("RefundProcessedBy")
   shifts               EmployeeShift[]
@@ -186,9 +190,97 @@ model User {
   purchaseOrdersMade   PurchaseOrder[]     @relation("PurchaseOrderCreatedBy")
   transfersInitiated   StockTransfer[]     @relation("TransferInitiatedBy")
   auditLogs            AuditLog[]
+  apiKeysCreated       ApiKey[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
+  @@index([assignedRoleId])
+}
+
+// ---------------------------------------------------------------------------
+// ROLES, PERMISSIONS & API KEYS
+//
+// Permission is a single global, system-defined catalog — one row per
+// distinct action a client can request (roughly one per route), seeded by
+// scripts/seedPermissions.js and never created through the API. Role is
+// tenant-defined: each tenant gets its own rows (including 5 pre-seeded
+// ones mirroring the legacy fixed roles) and assigns whichever Permissions
+// it wants to each one, however it wants — there is no fixed mapping.
+// ApiKey lets a tenant grant a *subset* of a role's reach to a third-party
+// integration without creating it a real login.
+// ---------------------------------------------------------------------------
+
+model Permission {
+  id          String   @id @default(uuid())
+  code        String   @unique // e.g. "products.create", "orders.refund"
+  category    String // groups related codes for a role-editor UI, e.g. "products"
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles   RolePermission[]
+  apiKeys ApiKeyPermission[]
+
+  @@index([category])
+}
+
+model Role {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  isSystem  Boolean  @default(false) // one of the 5 pre-seeded roles; the OWNER one can't be deactivated
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  permissions RolePermission[]
+  users       User[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+// keyHash is the only thing ever stored — the raw key is shown once, at
+// creation, and never persisted or retrievable again (same principle as a
+// password).
+model ApiKey {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String // human label, e.g. "Zapier integration"
+  keyHash     String    @unique
+  keyPrefix   String // first few chars, shown in the UI so a key can be identified without exposing it
+  isActive    Boolean   @default(true)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id])
+  createdBy   User               @relation(fields: [createdById], references: [id])
+  permissions ApiKeyPermission[]
+
+  @@index([tenantId])
+}
+
+model ApiKeyPermission {
+  apiKeyId     String
+  permissionId String
+
+  apiKey     ApiKey     @relation(fields: [apiKeyId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([apiKeyId, permissionId])
+  @@index([permissionId])
 }
 
 model EmployeeShift {
@@ -779,7 +871,10 @@ enum TenantStatus {
   CANCELLED
 }
 
-enum Role {
+// Being phased out in favor of the Role/Permission tables below. Kept only
+// so existing requireRole() checks keep working unchanged during the
+// migration — see User.role's comment.
+enum LegacyRole {
   OWNER
   MANAGER
   CASHIER

@@ -9,6 +9,7 @@ const create = {
     email: z.string().email(),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     role: roleEnum,
+    assignedRoleId: z.string().uuid().optional(), // the new tenant-defined Role
     pinCode: z.string().min(4).max(12).optional(),
     commissionRate: z.coerce.number().min(0).max(1).optional(),
   }),
@@ -35,6 +36,7 @@ const update = {
       name: z.string().min(2).max(120).optional(),
       email: z.string().email().optional(),
       role: roleEnum.optional(),
+      assignedRoleId: z.string().uuid().nullable().optional(),
       pinCode: z.string().min(4).max(12).nullable().optional(),
       commissionRate: z.coerce.number().min(0).max(1).nullable().optional(),
     })
