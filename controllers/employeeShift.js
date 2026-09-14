@@ -7,7 +7,7 @@ const clockIn = asyncHandler(async (req, res) => {
 });
 
 const clockOut = asyncHandler(async (req, res) => {
-  const shift = await employeeShiftService.clockOut(req.params.id, req.user, req.body);
+  const shift = await employeeShiftService.clockOut(req.params.id, req.user, req.permissions, req.body);
   res.status(200).json(shift);
 });
 
@@ -17,12 +17,12 @@ const getActive = asyncHandler(async (req, res) => {
 });
 
 const getById = asyncHandler(async (req, res) => {
-  const shift = await employeeShiftService.getShiftById(req.params.id, req.user);
+  const shift = await employeeShiftService.getShiftById(req.params.id, req.user, req.permissions);
   res.status(200).json(shift);
 });
 
 const list = asyncHandler(async (req, res) => {
-  const result = await employeeShiftService.listShifts(req.validatedQuery, req.user);
+  const result = await employeeShiftService.listShifts(req.validatedQuery, req.user, req.permissions);
   res.status(200).json(result);
 });
 

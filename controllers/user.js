@@ -13,7 +13,11 @@ const list = asyncHandler(async (req, res) => {
 
 const getMe = asyncHandler(async (req, res) => {
   const user = await userService.getUserPublicById(req.user.id);
-  res.status(200).json(user);
+  // Effective permissions from the current request (already re-derived
+  // fresh from the DB by authenticate.js) — lets a client know what to
+  // show/hide without a second round trip or reimplementing the role ->
+  // permission resolution itself.
+  res.status(200).json({ ...user, permissions: [...req.permissions].sort() });
 });
 
 const getById = asyncHandler(async (req, res) => {

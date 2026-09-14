@@ -31,6 +31,15 @@ async function createUser(actingUser, { name, email, password, role, assignedRol
   assertCanAssignRole(actingUser, role);
   if (assignedRoleId) {
     await roleService.getRoleRaw(assignedRoleId); // 404s if missing/foreign tenant
+  } else {
+    // No explicit assignedRoleId — fall back to the tenant's system role
+    // matching the legacy enum value, so every new user is automatically
+    // wired into the permission system without the caller having to know
+    // its role id. Only works while a tenant hasn't renamed/removed that
+    // system role; if they have, the caller must pass assignedRoleId
+    // explicitly instead.
+    const defaultRole = await prisma.role.findFirst({ where: { name: role, isSystem: true } });
+    assignedRoleId = defaultRole?.id ?? null;
   }
 
   const existing = await prisma.user.findFirst({ where: { email } });

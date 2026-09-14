@@ -1,7 +1,7 @@
 import express from 'express';
 import terminalController from '../controllers/terminal.js';
 import authenticate from '../middlewares/authenticate.js';
-import requireRole from '../middlewares/requireRole.js';
+import requirePermission from '../middlewares/requirePermission.js';
 import validate from '../middlewares/validate.js';
 import terminalValidation from '../validations/terminal.js';
 
@@ -9,18 +9,13 @@ const router = express.Router();
 
 router.use(authenticate);
 
-router.get('/', validate(terminalValidation.list), terminalController.list);
-router.get('/:id', validate(terminalValidation.getById), terminalController.getById);
+router.get('/', requirePermission('terminals.list'), validate(terminalValidation.list), terminalController.list);
+router.get('/:id', requirePermission('terminals.read'), validate(terminalValidation.getById), terminalController.getById);
+router.post('/:id/heartbeat', requirePermission('terminals.heartbeat'), validate(terminalValidation.heartbeat), terminalController.heartbeat);
 
-// Heartbeat is called by the till app itself, not a manager — any
-// authenticated tenant user (e.g. a cashier signed in on that device) can
-// ping it, so no role restriction here.
-router.post('/:id/heartbeat', validate(terminalValidation.heartbeat), terminalController.heartbeat);
-
-// Manager-driven registration/management only.
-router.post('/', requireRole('OWNER', 'MANAGER'), validate(terminalValidation.create), terminalController.create);
-router.patch('/:id', requireRole('OWNER', 'MANAGER'), validate(terminalValidation.update), terminalController.update);
-router.post('/:id/deactivate', requireRole('OWNER', 'MANAGER'), validate(terminalValidation.deactivate), terminalController.deactivate);
-router.post('/:id/reactivate', requireRole('OWNER', 'MANAGER'), validate(terminalValidation.reactivate), terminalController.reactivate);
+router.post('/', requirePermission('terminals.create'), validate(terminalValidation.create), terminalController.create);
+router.patch('/:id', requirePermission('terminals.update'), validate(terminalValidation.update), terminalController.update);
+router.post('/:id/deactivate', requirePermission('terminals.deactivate'), validate(terminalValidation.deactivate), terminalController.deactivate);
+router.post('/:id/reactivate', requirePermission('terminals.reactivate'), validate(terminalValidation.reactivate), terminalController.reactivate);
 
 export default router;

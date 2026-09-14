@@ -8,8 +8,13 @@ const shiftInclude = {
   location: { select: { id: true, name: true } },
 };
 
-function isPrivileged(actingUser) {
-  return ['OWNER', 'MANAGER'].includes(actingUser.role);
+// employeeShifts.readAll doubles as "privileged for shift management" —
+// covers viewing anyone's shifts and clocking someone else out (e.g. a
+// manager closing out a forgotten clock-out). Not split into a separate
+// clockOutAny code to avoid multiplying near-duplicate permissions for one
+// small edge case.
+function isPrivileged(permissions) {
+  return permissions.has('employeeShifts.readAll');
 }
 
 async function clockIn(actingUser, { locationId }) {
@@ -26,10 +31,10 @@ async function clockIn(actingUser, { locationId }) {
   });
 }
 
-async function clockOut(id, actingUser, { breakMinutes }) {
+async function clockOut(id, actingUser, permissions, { breakMinutes }) {
   const shift = await prisma.employeeShift.findUnique({ where: { id } });
   if (!shift) throw ApiError.notFound('Shift not found');
-  if (!isPrivileged(actingUser) && shift.userId !== actingUser.id) {
+  if (!isPrivileged(permissions) && shift.userId !== actingUser.id) {
     throw ApiError.forbidden('You can only clock yourself out');
   }
   if (shift.clockOut) {
@@ -49,20 +54,21 @@ async function getActiveShift(actingUser) {
   return shift;
 }
 
-async function getShiftById(id, actingUser) {
+async function getShiftById(id, actingUser, permissions) {
   const shift = await prisma.employeeShift.findUnique({ where: { id }, include: shiftInclude });
   if (!shift) throw ApiError.notFound('Shift not found');
-  if (!isPrivileged(actingUser) && shift.userId !== actingUser.id) {
+  if (!isPrivileged(permissions) && shift.userId !== actingUser.id) {
     throw ApiError.forbidden('You can only view your own shifts');
   }
   return shift;
 }
 
-// A non-manager can only ever see their own shifts — the userId filter is
-// silently overridden rather than rejected, so "my shifts" and "everyone's
-// shifts" share one endpoint instead of needing a separate self-service one.
-async function listShifts({ userId, locationId, activeOnly, page, limit }, actingUser) {
-  const effectiveUserId = isPrivileged(actingUser) ? userId : actingUser.id;
+// Someone without employeeShifts.readAll can only ever see their own shifts
+// — the userId filter is silently overridden rather than rejected, so "my
+// shifts" and "everyone's shifts" share one endpoint instead of needing a
+// separate self-service one.
+async function listShifts({ userId, locationId, activeOnly, page, limit }, actingUser, permissions) {
+  const effectiveUserId = isPrivileged(permissions) ? userId : actingUser.id;
 
   const where = {
     ...(effectiveUserId ? { userId: effectiveUserId } : {}),
