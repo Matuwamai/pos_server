@@ -44,6 +44,7 @@ const INVENTORY_CLERK_CODES = [
 // already granted, defined fresh for the "books and payroll" persona.
 const ACCOUNTANT_CODES = [
   'orders.list', 'orders.read',
+  'salesSummary.list', 'salesSummary.totals',
   'payments.list', 'payments.read', 'payments.updateStatus',
   'auditLogs.list',
   'purchaseOrders.list', 'purchaseOrders.read',

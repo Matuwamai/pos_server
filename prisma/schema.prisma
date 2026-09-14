@@ -35,41 +35,42 @@ model SuperAdmin {
 // ---------------------------------------------------------------------------
 
 model Tenant {
-  id                 String                   @id @default(uuid())
-  name               String
-  subdomain          String                   @unique
-  plan               String                   @default("trial")
-  status             TenantStatus             @default(ACTIVE)
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
-  subscription       Subscription?
-  locations          Location[]
-  terminals          Terminal[]
-  users              User[]
-  employeeShifts     EmployeeShift[]
-  categories         Category[]
-  products           Product[]
-  variants           ProductVariant[]
-  modifierGroups     ModifierGroup[]
-  suppliers          Supplier[]
-  purchaseOrders     PurchaseOrder[]
-  stockTransfers     StockTransfer[]
-  inventoryItems     InventoryItem[]
-  inventoryLogs      InventoryLog[]
-  customerGroups     CustomerGroup[]
-  customers          Customer[]
-  loyaltyProgram     LoyaltyProgram?
-  loyaltyTxns        LoyaltyTransaction[]
-  storeCreditTxns    StoreCreditTransaction[]
-  giftCards          GiftCard[]
-  promotions         Promotion[]
-  taxRates           TaxRate[]
-  orders             Order[]
-  refunds            Refund[]
-  cashDrawerSessions CashDrawerSession[]
-  auditLogs          AuditLog[]
-  roles              Role[]
-  apiKeys            ApiKey[]
+  id                  String                   @id @default(uuid())
+  name                String
+  subdomain           String                   @unique
+  plan                String                   @default("trial")
+  status              TenantStatus             @default(ACTIVE)
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  subscription        Subscription?
+  locations           Location[]
+  terminals           Terminal[]
+  users               User[]
+  employeeShifts      EmployeeShift[]
+  categories          Category[]
+  products            Product[]
+  variants            ProductVariant[]
+  modifierGroups      ModifierGroup[]
+  suppliers           Supplier[]
+  purchaseOrders      PurchaseOrder[]
+  stockTransfers      StockTransfer[]
+  inventoryItems      InventoryItem[]
+  inventoryLogs       InventoryLog[]
+  customerGroups      CustomerGroup[]
+  customers           Customer[]
+  loyaltyProgram      LoyaltyProgram?
+  loyaltyTxns         LoyaltyTransaction[]
+  storeCreditTxns     StoreCreditTransaction[]
+  giftCards           GiftCard[]
+  promotions          Promotion[]
+  taxRates            TaxRate[]
+  orders              Order[]
+  refunds             Refund[]
+  cashDrawerSessions  CashDrawerSession[]
+  auditLogs           AuditLog[]
+  roles               Role[]
+  apiKeys             ApiKey[]
+  dailySalesSummaries DailySalesSummary[]
 
   @@index([status])
 }
@@ -104,16 +105,17 @@ model Location {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  tenant             Tenant              @relation(fields: [tenantId], references: [id])
-  terminals          Terminal[]
-  inventoryItems     InventoryItem[]
-  inventoryLogs      InventoryLog[]
-  orders             Order[]
-  employeeShifts     EmployeeShift[]
-  cashDrawerSessions CashDrawerSession[]
-  purchaseOrders     PurchaseOrder[]
-  transfersFrom      StockTransfer[]     @relation("TransferFromLocation")
-  transfersTo        StockTransfer[]     @relation("TransferToLocation")
+  tenant              Tenant              @relation(fields: [tenantId], references: [id])
+  terminals           Terminal[]
+  inventoryItems      InventoryItem[]
+  inventoryLogs       InventoryLog[]
+  orders              Order[]
+  employeeShifts      EmployeeShift[]
+  cashDrawerSessions  CashDrawerSession[]
+  purchaseOrders      PurchaseOrder[]
+  transfersFrom       StockTransfer[]     @relation("TransferFromLocation")
+  transfersTo         StockTransfer[]     @relation("TransferToLocation")
+  dailySalesSummaries DailySalesSummary[]
 
   @@index([tenantId])
 }
@@ -836,6 +838,37 @@ model RefundItem {
   orderItem OrderItem @relation(fields: [orderItemId], references: [id])
 
   @@index([refundId])
+}
+
+// A daily rollup per location, kept in sync in real time (incremented
+// atomically alongside order completion/refund, same "snapshot updated in
+// the same transaction as the event" pattern as InventoryItem/
+// Customer.storeCreditBalance/GiftCard.currentBalance) rather than
+// recomputed by a batch job — this codebase has no scheduler, and Order
+// stays the transactional source of truth this is only ever derived from.
+// `date` is bucketed using the Location's own timezone, not UTC, so a late
+// sale lands on the calendar day staff actually experienced.
+model DailySalesSummary {
+  id            String   @id @default(uuid())
+  tenantId      String
+  locationId    String
+  date          DateTime @db.Date
+  orderCount    Int      @default(0)
+  itemCount     Decimal  @default(0) @db.Decimal(12, 3)
+  subtotal      Decimal  @default(0) @db.Decimal(12, 2)
+  discountTotal Decimal  @default(0) @db.Decimal(12, 2)
+  taxTotal      Decimal  @default(0) @db.Decimal(12, 2)
+  total         Decimal  @default(0) @db.Decimal(12, 2)
+  refundTotal   Decimal  @default(0) @db.Decimal(12, 2) // refunds are booked against the day the refund happened, not the original sale date
+  netTotal      Decimal  @default(0) @db.Decimal(12, 2) // total - refundTotal
+  updatedAt     DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@unique([tenantId, locationId, date])
+  @@index([tenantId])
+  @@index([date])
 }
 
 // -----------------------------------------------

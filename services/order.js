@@ -10,6 +10,7 @@ import taxRateService from './taxRate.js';
 import storeCreditTransactionService from './storeCreditTransaction.js';
 import giftCardService from './giftCard.js';
 import auditLogService from './auditLog.js';
+import salesSummaryService from './salesSummary.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 
 // Scope note: orders are built client-side (a till app manages its own cart)
@@ -20,7 +21,7 @@ import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 // inventory and reverse payments.
 
 const orderInclude = {
-  location: { select: { id: true, name: true } },
+  location: { select: { id: true, name: true, timezone: true } },
   terminal: { select: { id: true, name: true } },
   customer: { select: { id: true, name: true } },
   user: { select: { id: true, name: true } },
@@ -144,7 +145,7 @@ function buildOrderSearchFilter(search) {
 }
 
 async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessionId, customerId, channel, items, discounts, payments }) {
-  await locationService.getLocationById(locationId); // 404s if missing/foreign tenant
+  const location = await locationService.getLocationById(locationId); // 404s if missing/foreign tenant
 
   if (terminalId) {
     const terminal = await terminalService.getTerminalById(terminalId);
@@ -307,6 +308,17 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
       }
     }
 
+    const itemCount = pricedItems.reduce((sum, priced) => sum + priced.quantity, 0);
+    await salesSummaryService.applySalesForOrder(tx, {
+      locationId,
+      timezone: location.timezone,
+      subtotal,
+      discountTotal,
+      taxTotal,
+      total,
+      itemCount,
+    });
+
     return order.id;
   });
 
@@ -385,6 +397,12 @@ async function refundOrder(id, actingUser, { items, reason, refundMethod, giftCa
     }
 
     await tx.payment.create({ data: { orderId: order.id, method: refundMethod, amount: -totalAmount, status: 'CAPTURED' } });
+
+    await salesSummaryService.applyRefundForOrder(tx, {
+      locationId: order.locationId,
+      timezone: order.location.timezone,
+      refundAmount: totalAmount,
+    });
 
     if (refundMethod === 'STORE_CREDIT') {
       await storeCreditTransactionService.applyStoreCreditChange(tx, {

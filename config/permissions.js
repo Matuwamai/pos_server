@@ -208,6 +208,10 @@ const PERMISSIONS = [
   { code: 'apiKeys.list', category: 'apiKeys', description: 'List API keys' },
   { code: 'apiKeys.create', category: 'apiKeys', description: 'Create an API key' },
   { code: 'apiKeys.revoke', category: 'apiKeys', description: 'Revoke an API key' },
+
+  // sales reporting
+  { code: 'salesSummary.list', category: 'salesSummary', description: 'View daily sales summaries' },
+  { code: 'salesSummary.totals', category: 'salesSummary', description: 'View aggregated sales totals for a date range' },
 ];
 
 export default PERMISSIONS;

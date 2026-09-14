@@ -42,6 +42,7 @@ import userRoutes from './routers/user.js';
 import roleRoutes from './routers/role.js';
 import permissionRoutes from './routers/permission.js';
 import apiKeyRoutes from './routers/apiKey.js';
+import salesSummaryRoutes from './routers/salesSummary.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -89,6 +90,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/roles', roleRoutes);
 app.use('/api/v1/permissions', permissionRoutes);
 app.use('/api/v1/api-keys', apiKeyRoutes);
+app.use('/api/v1/sales-summary', salesSummaryRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);
