@@ -43,6 +43,10 @@ import roleRoutes from './routers/role.js';
 import permissionRoutes from './routers/permission.js';
 import apiKeyRoutes from './routers/apiKey.js';
 import salesSummaryRoutes from './routers/salesSummary.js';
+import smsTemplateRoutes from './routers/smsTemplate.js';
+import smsMessageRoutes from './routers/smsMessage.js';
+import smsCampaignRoutes from './routers/smsCampaign.js';
+import invoiceRoutes from './routers/invoice.js';
 
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — shutting down', { stack: err.stack });
@@ -91,6 +95,10 @@ app.use('/api/v1/roles', roleRoutes);
 app.use('/api/v1/permissions', permissionRoutes);
 app.use('/api/v1/api-keys', apiKeyRoutes);
 app.use('/api/v1/sales-summary', salesSummaryRoutes);
+app.use('/api/v1/sms-templates', smsTemplateRoutes);
+app.use('/api/v1/sms-messages', smsMessageRoutes);
+app.use('/api/v1/sms-campaigns', smsCampaignRoutes);
+app.use('/api/v1/invoices', invoiceRoutes);
 
 // Must be registered last, after all routes.
 app.use(errorHandler);

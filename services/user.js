@@ -86,6 +86,18 @@ async function getUserPublicById(id) {
   return sanitize(await getUserRaw(id));
 }
 
+// Blocks turning MFA on for an account with no phone on file (and blocks
+// clearing the phone while MFA stays on) — otherwise login would issue an
+// mfa_pending token and then have nowhere to send the code, permanently
+// stuck one step short of a real session.
+function assertMfaHasPhone(user, updates) {
+  const phoneAfterUpdate = updates.phone !== undefined ? updates.phone : user.phone;
+  const mfaAfterUpdate = updates.mfaEnabled !== undefined ? updates.mfaEnabled : user.mfaEnabled;
+  if (mfaAfterUpdate && !phoneAfterUpdate) {
+    throw ApiError.badRequest('A phone number is required to enable MFA');
+  }
+}
+
 async function updateUser(actingUser, id, updates) {
   const user = await getUserRaw(id); // ensures it exists (and belongs to this tenant), 404s otherwise
   assertCanModifyTarget(actingUser, user);
@@ -99,6 +111,7 @@ async function updateUser(actingUser, id, updates) {
     const existing = await prisma.user.findFirst({ where: { email: updates.email, NOT: { id } } });
     if (existing) throw ApiError.conflict('A user with this email already exists');
   }
+  assertMfaHasPhone(user, updates);
 
   return prisma.$transaction(async (tx) => {
     const updated = await tx.user.update({ where: { id }, data: updates });
@@ -154,6 +167,17 @@ async function reactivateUser(actingUser, id) {
   });
 }
 
+// Self-service subset of updateUser — no role/email/assignedRoleId, so it
+// needs no privilege checks; any authenticated user can set their own phone
+// and MFA preference.
+async function updateOwnProfile(actingUser, updates) {
+  const user = await getUserRaw(actingUser.id);
+  assertMfaHasPhone(user, updates);
+
+  const updated = await prisma.user.update({ where: { id: user.id }, data: updates });
+  return sanitize(updated);
+}
+
 async function changeOwnPassword(actingUser, { currentPassword, newPassword }) {
   const user = await getUserRaw(actingUser.id);
   const valid = await bcrypt.compare(currentPassword, user.passwordHash);
@@ -188,6 +212,7 @@ export default {
   listUsers,
   getUserPublicById,
   updateUser,
+  updateOwnProfile,
   deactivateUser,
   reactivateUser,
   changeOwnPassword,

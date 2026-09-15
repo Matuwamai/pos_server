@@ -11,4 +11,10 @@ const router = express.Router();
 router.post('/signup', validate(authValidation.signup), authController.signup);
 router.post('/login', validate(authValidation.login), authController.login);
 
+// Second step of MFA — POST /login returns { mfaRequired: true, mfaToken }
+// instead of a real session token when the user has MFA enabled; the
+// client submits the code it received via SMS against that token here.
+router.post('/verify-otp', validate(authValidation.verifyOtp), authController.verifyOtp);
+router.post('/resend-otp', validate(authValidation.resendOtp), authController.resendOtp);
+
 export default router;

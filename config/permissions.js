@@ -212,6 +212,35 @@ const PERMISSIONS = [
   // sales reporting
   { code: 'salesSummary.list', category: 'salesSummary', description: 'View daily sales summaries' },
   { code: 'salesSummary.totals', category: 'salesSummary', description: 'View aggregated sales totals for a date range' },
+
+  // SMS templates
+  { code: 'smsTemplates.list', category: 'sms', description: 'List SMS templates' },
+  { code: 'smsTemplates.read', category: 'sms', description: 'View an SMS template' },
+  { code: 'smsTemplates.create', category: 'sms', description: 'Create an SMS template' },
+  { code: 'smsTemplates.update', category: 'sms', description: 'Edit an SMS template' },
+  { code: 'smsTemplates.deactivate', category: 'sms', description: 'Deactivate an SMS template' },
+  { code: 'smsTemplates.reactivate', category: 'sms', description: 'Reactivate an SMS template' },
+
+  // SMS messages (send + history)
+  { code: 'smsMessages.list', category: 'sms', description: 'View SMS message history' },
+  { code: 'smsMessages.read', category: 'sms', description: 'View an SMS message' },
+  { code: 'smsMessages.send', category: 'sms', description: 'Send a direct SMS message' },
+
+  // SMS campaigns
+  { code: 'smsCampaigns.list', category: 'sms', description: 'List SMS campaigns' },
+  { code: 'smsCampaigns.read', category: 'sms', description: 'View an SMS campaign' },
+  { code: 'smsCampaigns.create', category: 'sms', description: 'Create an SMS campaign' },
+  { code: 'smsCampaigns.update', category: 'sms', description: 'Edit a draft SMS campaign' },
+  { code: 'smsCampaigns.cancel', category: 'sms', description: 'Cancel an SMS campaign' },
+
+  // invoices (bill-later sales, distinct from an immediate POS Order)
+  { code: 'invoices.list', category: 'invoices', description: 'List invoices' },
+  { code: 'invoices.read', category: 'invoices', description: 'View an invoice' },
+  { code: 'invoices.create', category: 'invoices', description: 'Create a draft invoice' },
+  { code: 'invoices.update', category: 'invoices', description: 'Edit a draft invoice' },
+  { code: 'invoices.issue', category: 'invoices', description: 'Issue a draft invoice to the customer' },
+  { code: 'invoices.recordPayment', category: 'invoices', description: 'Record a payment against an invoice' },
+  { code: 'invoices.void', category: 'invoices', description: 'Void an invoice' },
 ];
 
 export default PERMISSIONS;

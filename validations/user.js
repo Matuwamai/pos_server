@@ -29,6 +29,8 @@ const list = {
   }),
 };
 
+const phoneSchema = z.string().regex(/^\+?[1-9]\d{7,14}$/, 'Use E.164 format, e.g. +254712345678');
+
 const update = {
   params: idParams,
   body: z
@@ -39,6 +41,20 @@ const update = {
       assignedRoleId: z.string().uuid().nullable().optional(),
       pinCode: z.string().min(4).max(12).nullable().optional(),
       commissionRate: z.coerce.number().min(0).max(1).nullable().optional(),
+      phone: phoneSchema.nullable().optional(),
+      mfaEnabled: z.coerce.boolean().optional(),
+    })
+    .refine((data) => Object.keys(data).length > 0, {
+      message: 'At least one field must be provided',
+    }),
+};
+
+const updateMe = {
+  body: z
+    .object({
+      name: z.string().min(2).max(120).optional(),
+      phone: phoneSchema.nullable().optional(),
+      mfaEnabled: z.coerce.boolean().optional(),
     })
     .refine((data) => Object.keys(data).length > 0, {
       message: 'At least one field must be provided',
@@ -67,4 +83,4 @@ const resetPassword = {
   }),
 };
 
-export default { create, getById, list, update, deactivate, reactivate, changeOwnPassword, resetPassword };
+export default { create, getById, list, update, updateMe, deactivate, reactivate, changeOwnPassword, resetPassword };

@@ -20,6 +20,11 @@ const getMe = asyncHandler(async (req, res) => {
   res.status(200).json({ ...user, permissions: [...req.permissions].sort() });
 });
 
+const updateMe = asyncHandler(async (req, res) => {
+  const user = await userService.updateOwnProfile(req.user, req.body);
+  res.status(200).json(user);
+});
+
 const getById = asyncHandler(async (req, res) => {
   const user = await userService.getUserPublicById(req.params.id);
   res.status(200).json(user);
@@ -50,4 +55,4 @@ const resetPassword = asyncHandler(async (req, res) => {
   res.status(200).json({ message: 'Password reset' });
 });
 
-export default { create, list, getMe, getById, update, deactivate, reactivate, changeOwnPassword, resetPassword };
+export default { create, list, getMe, updateMe, getById, update, deactivate, reactivate, changeOwnPassword, resetPassword };

@@ -3,9 +3,11 @@ import jwt from 'jsonwebtoken';
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import roleService from './role.js';
+import smsOtpService from './smsOtp.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
+const MFA_TOKEN_EXPIRES_IN = '10m';
 const TRIAL_LENGTH_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 function signToken(user) {
@@ -17,6 +19,27 @@ function signToken(user) {
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
+}
+
+// A short-lived, single-purpose token identifying "this user passed
+// password auth and is mid-MFA-challenge" — never usable as a real session
+// token (authenticate.js only accepts type 'tenant_user'), so it can be
+// handed back to the client without granting any access on its own.
+function signMfaToken(user) {
+  return jwt.sign({ sub: user.id, type: 'mfa_pending' }, JWT_SECRET, { expiresIn: MFA_TOKEN_EXPIRES_IN });
+}
+
+function verifyMfaToken(mfaToken) {
+  let payload;
+  try {
+    payload = jwt.verify(mfaToken, JWT_SECRET);
+  } catch {
+    throw ApiError.unauthorized('Invalid or expired MFA session — please log in again');
+  }
+  if (payload.type !== 'mfa_pending') {
+    throw ApiError.unauthorized('Invalid MFA session');
+  }
+  return payload;
 }
 
 async function signup({ tenantName, subdomain, ownerName, ownerEmail, ownerPassword }) {
@@ -90,8 +113,39 @@ async function login({ subdomain, email, password }) {
     throw ApiError.unauthorized('Invalid credentials');
   }
 
+  if (user.mfaEnabled) {
+    await smsOtpService.issueOtp(user, 'OTP');
+    return { mfaRequired: true, mfaToken: signMfaToken(user) };
+  }
+
   const token = signToken(user);
   return { token, user: sanitize(user) };
+}
+
+async function verifyLoginOtp({ mfaToken, code }) {
+  const payload = verifyMfaToken(mfaToken);
+
+  await smsOtpService.verifyOtp(payload.sub, code);
+
+  const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+  if (!user || !user.isActive) {
+    throw ApiError.unauthorized('Invalid credentials');
+  }
+
+  const token = signToken(user);
+  return { token, user: sanitize(user) };
+}
+
+async function resendLoginOtp({ mfaToken }) {
+  const payload = verifyMfaToken(mfaToken);
+
+  const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+  if (!user || !user.isActive) {
+    throw ApiError.unauthorized('Invalid credentials');
+  }
+
+  await smsOtpService.issueOtp(user, 'OTP_RESEND');
+  return { mfaRequired: true, mfaToken: signMfaToken(user) };
 }
 
 function sanitize(user) {
@@ -99,4 +153,4 @@ function sanitize(user) {
   return safe;
 }
 
-export default { signup, login };
+export default { signup, login, verifyLoginOtp, resendLoginOtp };

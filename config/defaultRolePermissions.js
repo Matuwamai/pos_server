@@ -60,6 +60,10 @@ const ACCOUNTANT_CODES = [
   'locations.list', 'locations.read', 'terminals.list', 'terminals.read',
   'users.list', 'users.read',
   'employeeShifts.readAll', 'employeeShifts.readOwn', 'employeeShifts.clockIn', 'employeeShifts.clockOut',
+  // Collecting on and reviewing invoices is bookkeeping work; granting
+  // credit terms (create/update/issue) or writing one off (void) stays
+  // with OWNER/MANAGER.
+  'invoices.list', 'invoices.read', 'invoices.recordPayment',
 ];
 
 // Seeded verbatim for every tenant (services/role.js's seedDefaultRolesForTenant).

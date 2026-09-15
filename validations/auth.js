@@ -25,4 +25,17 @@ const login = {
   }),
 };
 
-export default { signup, login };
+const verifyOtp = {
+  body: z.object({
+    mfaToken: z.string().min(1),
+    code: z.string().length(6),
+  }),
+};
+
+const resendOtp = {
+  body: z.object({
+    mfaToken: z.string().min(1),
+  }),
+};
+
+export default { signup, login, verifyOtp, resendOtp };

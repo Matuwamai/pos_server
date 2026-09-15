@@ -31,6 +31,10 @@ class ApiError extends Error {
     return new ApiError(409, message);
   }
 
+  static tooManyRequests(message = 'Too many requests') {
+    return new ApiError(429, message);
+  }
+
   // 402 = the tenant's subscription has lapsed, or their plan doesn't
   // include the requested feature. `details.code` lets clients tell the two
   // apart: SUBSCRIPTION_EXPIRED should close the app to a renewal page,

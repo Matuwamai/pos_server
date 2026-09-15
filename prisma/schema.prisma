@@ -71,6 +71,10 @@ model Tenant {
   roles               Role[]
   apiKeys             ApiKey[]
   dailySalesSummaries DailySalesSummary[]
+  smsTemplates        SmsTemplate[]
+  smsMessages         SmsMessage[]
+  smsCampaigns        SmsCampaign[]
+  invoices            Invoice[]
 
   @@index([status])
 }
@@ -116,6 +120,7 @@ model Location {
   transfersFrom       StockTransfer[]     @relation("TransferFromLocation")
   transfersTo         StockTransfer[]     @relation("TransferToLocation")
   dailySalesSummaries DailySalesSummary[]
+  invoices            Invoice[]
 
   @@index([tenantId])
 }
@@ -180,6 +185,8 @@ model User {
   role           LegacyRole @default(CASHIER) // being phased out in favor of assignedRole; kept so existing requireRole() routes are unaffected during the migration
   assignedRoleId String? // the new tenant-defined Role; nullable until every user is backfilled
   commissionRate Decimal?   @db.Decimal(5, 4) // e.g. 0.05 = 5%, null = no commission
+  phone          String? // required for MFA — a user can't enable it until this is set
+  mfaEnabled     Boolean    @default(false) // opt-in per user, not forced tenant-wide — turning it on for everyone by default would lock out any account with no phone on file
   isActive       Boolean    @default(true)
   createdAt      DateTime   @default(now())
 
@@ -193,6 +200,11 @@ model User {
   transfersInitiated   StockTransfer[]     @relation("TransferInitiatedBy")
   auditLogs            AuditLog[]
   apiKeysCreated       ApiKey[]
+  smsMessages          SmsMessage[]
+  smsOtps              SmsOtp[]
+  smsCampaignsCreated  SmsCampaign[]       @relation("SmsCampaignCreatedBy")
+  invoicesCreated      Invoice[]           @relation("InvoiceCreatedBy")
+  invoicePaymentsTaken InvoicePayment[]    @relation("InvoicePaymentRecordedBy")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -361,6 +373,7 @@ model ProductVariant {
   inventoryLogs      InventoryLog[]
   asComponentIn      ProductComponent[]  @relation("ComponentVariant")
   components         ProductComponent[]  @relation("ParentVariant")
+  invoiceItems       InvoiceItem[]
 
   @@unique([tenantId, sku])
   @@index([tenantId])
@@ -581,6 +594,7 @@ model Customer {
   loyaltyTxns     LoyaltyTransaction[]
   storeCreditTxns StoreCreditTransaction[]
   giftCardsIssued GiftCard[]
+  invoices        Invoice[]
 
   @@index([tenantId])
 }
@@ -742,6 +756,7 @@ model Order {
   loyaltyTxns     LoyaltyTransaction[]
   storeCreditTxns StoreCreditTransaction[]
   giftCardTxns    GiftCardTransaction[]
+  invoices        Invoice[]
 
   @@index([tenantId])
   @@index([customerId])
@@ -988,4 +1003,258 @@ enum PromotionType {
   PERCENTAGE
   FIXED_AMOUNT
   BOGO
+}
+
+// ---------------------------------------------------------------------------
+// SMS / OTP / NOTIFICATIONS (Africa's Talking)
+//
+// Every model here is tenant-scoped (tenantId added — the version this was
+// adapted from had none, which would have pooled every tenant's message
+// history, templates, and campaigns into one shared, unisolated set,
+// breaking the row-level isolation every other table in this schema
+// depends on). SmsOtp is the one exception: it's reachable only via its
+// User, the same shape as Modifier/ProductComponent, and — critically — is
+// looked up during login itself, before any tenant context exists yet.
+// `createdBy` on SmsCampaign points at User (this schema's actual staff
+// model; there's no separate Staff model). No @@map/onDelete — kept
+// consistent with the rest of the schema, which uses neither (soft-delete
+// via isActive everywhere, no hard deletes to cascade).
+// ---------------------------------------------------------------------------
+
+enum SmsEventType {
+  ORDER_CREATED
+  ORDER_DISPATCHED
+  PAYMENT_RECEIVED
+  ACCOUNT_RECONCILIATION
+  MARKETING
+  OTP
+  DIRECT_MESSAGE
+  ACCOUNT_CREATION
+  OTP_RESEND
+}
+
+enum SmsStatus {
+  PENDING
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  REJECTED
+  PERMANENTLY_FAILED
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  CANCELLED
+}
+
+model SmsTemplate {
+  id        String       @id @default(uuid())
+  tenantId  String
+  name      String
+  code      String
+  content   String       @db.Text
+  eventType SmsEventType
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  messages  SmsMessage[]
+  campaigns SmsCampaign[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([eventType, isActive])
+}
+
+model SmsMessage {
+  id                      String        @id @default(uuid())
+  tenantId                String
+  templateId              String?
+  campaignId              String?
+  userId                  String? // set when the recipient is a staff member; customer/supplier sends address by recipientPhone alone
+  recipientPhone          String
+  recipientName           String?
+  recipientType           String // CUSTOMER, STAFF, SUPPLIER
+  messageContent          String        @db.Text
+  status                  SmsStatus     @default(PENDING)
+  africastalkingMessageId String?
+  cost                    Float?
+  retryCount              Int           @default(0)
+  lastRetryAt             DateTime?
+  scheduledFor            DateTime?
+  eventType               SmsEventType?
+  referenceId             String? // Order id, SmsOtp id, etc.
+  referenceType           String? // ORDER, SMS_OTP, etc.
+  failureReason           String?
+  sentAt                  DateTime?
+  deliveredAt             DateTime?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  template SmsTemplate? @relation(fields: [templateId], references: [id])
+  campaign SmsCampaign? @relation(fields: [campaignId], references: [id])
+  user     User?        @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([recipientPhone, status])
+  @@index([status, scheduledFor])
+  @@index([campaignId, status])
+  @@index([templateId])
+  @@index([userId])
+  @@index([eventType, status])
+  @@index([referenceId, referenceType])
+  @@index([createdAt])
+}
+
+// Campaign *execution* (working through recipientCount/filters and actually
+// sending in bulk) needs a background job runner this codebase doesn't have
+// yet — this models the resource, but nothing here processes SENDING ->
+// COMPLETED on its own; that's a deliberate gap, not an oversight.
+model SmsCampaign {
+  id                 String         @id @default(uuid())
+  tenantId           String
+  name               String
+  templateId         String
+  status             CampaignStatus @default(DRAFT)
+  recipientMode      String         @default("FILTER") // FILTER, SELECTED, MANUAL, MIXED
+  filters            Json // recipient filters, shape owned by the caller (e.g. customerGroupId, marketingOptIn)
+  selectedRecipients Json? // explicit userIds or manual phone numbers
+  scheduledFor       DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  recipientCount     Int            @default(0)
+  sentCount          Int            @default(0)
+  deliveredCount     Int            @default(0)
+  failedCount        Int            @default(0)
+  totalCost          Float          @default(0)
+  createdById        String
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  tenant    Tenant       @relation(fields: [tenantId], references: [id])
+  template  SmsTemplate  @relation(fields: [templateId], references: [id])
+  createdBy User         @relation("SmsCampaignCreatedBy", fields: [createdById], references: [id])
+  messages  SmsMessage[]
+
+  @@index([tenantId])
+  @@index([status, scheduledFor])
+  @@index([templateId])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+// No tenantId of its own — reachable only via userId, and looked up during
+// login itself (before any tenant/ALS context exists), same shape as the
+// Tenant/User lookups auth.service.js already does pre-authentication.
+model SmsOtp {
+  id        String   @id @default(uuid())
+  userId    String
+  phone     String
+  code      String
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isUsed])
+  @@index([phone, code, expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// INVOICES
+//
+// Distinct from Order/Payment: an Order is an immediate POS sale (paid in
+// full at the register, in whatever mix of methods). An Invoice is a bill
+// issued to a customer to be paid later — in full or in installments — so
+// it needs its own lifecycle (DRAFT -> SENT -> PARTIALLY_PAID/PAID, or
+// VOID) and its own running balance. There's no OVERDUE status: with no
+// background job/scheduler in this codebase (same reasoning as
+// SmsCampaign), "overdue" is computed at read time from dueDate + status
+// instead of a state a job would need to flip.
+//
+// An invoice may optionally reference the Order it was raised for
+// (`orderId`), but carries its own line items rather than reusing
+// OrderItem — an invoice can also be raised standalone (e.g. billing a
+// wholesale customer for something never rung up through the till).
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  tenantId      String
+  invoiceNumber Int           @unique @default(autoincrement()) // human-readable, globally sequential (mirrors Order.orderNumber)
+  orderId       String? // the POS sale this invoice bills, if any
+  customerId    String
+  locationId    String?
+  createdById   String
+  status        InvoiceStatus @default(DRAFT)
+  issueDate     DateTime      @default(now())
+  dueDate       DateTime
+  subtotal      Decimal       @db.Decimal(10, 2)
+  discountTotal Decimal       @default(0) @db.Decimal(10, 2)
+  taxTotal      Decimal       @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+  amountPaid    Decimal       @default(0) @db.Decimal(10, 2)
+  notes         String?       @db.Text
+  voidReason    String?
+  voidedAt      DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id])
+  order     Order?           @relation(fields: [orderId], references: [id])
+  customer  Customer         @relation(fields: [customerId], references: [id])
+  location  Location?        @relation(fields: [locationId], references: [id])
+  createdBy User             @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  items     InvoiceItem[]
+  payments  InvoicePayment[]
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([status, dueDate])
+  @@index([orderId])
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  variantId   String? // nullable so a free-text line (e.g. "Consulting - 2hrs") doesn't require a catalog product
+  description String
+  quantity    Decimal @db.Decimal(10, 3)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  taxAmount   Decimal @default(0) @db.Decimal(10, 2)
+  lineTotal   Decimal @db.Decimal(10, 2)
+
+  invoice Invoice         @relation(fields: [invoiceId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([invoiceId])
+}
+
+model InvoicePayment {
+  id           String        @id @default(uuid())
+  invoiceId    String
+  method       PaymentMethod
+  amount       Decimal       @db.Decimal(10, 2)
+  reference    String?
+  recordedById String
+  createdAt    DateTime      @default(now())
+
+  invoice    Invoice @relation(fields: [invoiceId], references: [id])
+  recordedBy User    @relation("InvoicePaymentRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([invoiceId])
 }
