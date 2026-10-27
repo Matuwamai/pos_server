@@ -18,7 +18,27 @@ async function createLocation(planCode, { name, address, timezone }) {
     });
   }
 
-  return prisma.location.create({ data: { name, address, timezone } });
+  // Mirror of product.js's provisionInventory, run the other direction: a
+  // product created before this location got a zero-quantity InventoryItem
+  // at every location that existed *then*, so without this, every
+  // already-tracked variant would have no row here at all — the first
+  // stock transfer or sale into this location would 409 with "not tracked
+  // at this location" until someone happened to adjust stock here first.
+  return prisma.$transaction(async (tx) => {
+    const location = await tx.location.create({ data: { name, address, timezone } });
+
+    const trackedVariants = await tx.productVariant.findMany({
+      where: { isActive: true, product: { trackInventory: true } },
+      select: { id: true },
+    });
+    if (trackedVariants.length > 0) {
+      await tx.inventoryItem.createMany({
+        data: trackedVariants.map((v) => ({ variantId: v.id, locationId: location.id, quantity: 0 })),
+      });
+    }
+
+    return location;
+  });
 }
 
 async function listLocations({ search, page, limit }) {
