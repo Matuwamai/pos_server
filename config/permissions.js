@@ -8,6 +8,15 @@
 // billing webhook (its own stub auth) — none of those are gated by a
 // tenant user's permissions.
 const PERMISSIONS = [
+  // tenant self-service branding (name/logo shown in the app's own chrome
+  // and on printed receipts) — reading it isn't gated (every authenticated
+  // user of any role needs it for the topbar/sidebar), only changing it is.
+  { code: 'tenant.branding.update', category: 'tenant', description: "Update the tenant's logo" },
+
+  // Offline terminal sync — pull the catalog down, push sales back up.
+  { code: 'sync.pull', category: 'sync', description: 'Download catalog and stock changes for offline use' },
+  { code: 'sync.push', category: 'sync', description: 'Upload offline sales and drawer events' },
+
   // locations
   { code: 'locations.list', category: 'locations', description: 'List locations' },
   { code: 'locations.read', category: 'locations', description: 'View a location' },
@@ -24,6 +33,7 @@ const PERMISSIONS = [
   { code: 'terminals.deactivate', category: 'terminals', description: 'Deactivate a terminal' },
   { code: 'terminals.reactivate', category: 'terminals', description: 'Reactivate a terminal' },
   { code: 'terminals.heartbeat', category: 'terminals', description: 'Send a terminal heartbeat' },
+  { code: 'terminals.enroll', category: 'terminals', description: 'Enroll or revoke a device token for offline sync' },
 
   // cash drawer sessions
   { code: 'cashDrawerSessions.list', category: 'cashDrawerSessions', description: 'List cash drawer sessions' },

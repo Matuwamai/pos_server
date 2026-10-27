@@ -36,4 +36,16 @@ const heartbeat = asyncHandler(async (req, res) => {
   res.status(200).json(terminal);
 });
 
-export default { create, list, getById, update, deactivate, reactivate, heartbeat };
+const enrollDevice = asyncHandler(async (req, res) => {
+  const result = await terminalService.enrollDevice(req.params.id);
+  res.status(201).json(result);
+});
+
+const revokeDevice = asyncHandler(async (req, res) => {
+  const result = await terminalService.revokeDevice(req.params.id);
+  res.status(200).json(result);
+});
+
+export default {
+  enrollDevice,
+  revokeDevice, create, list, getById, update, deactivate, reactivate, heartbeat };

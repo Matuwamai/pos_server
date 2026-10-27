@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import locationService from './location.js';
@@ -68,7 +69,7 @@ async function heartbeat(id) {
   return prisma.terminal.update({ where: { id }, data: { lastSeenAt: new Date() } });
 }
 
-export default {
+const terminalService = {
   createTerminal,
   listTerminals,
   getTerminalById,
@@ -77,3 +78,29 @@ export default {
   reactivateTerminal,
   heartbeat,
 };
+
+;
+
+// Device tokens last a year but are revocable: the token carries the
+// terminal's tokenVersion, and the terminal middleware re-checks it on every
+// request. Revoke bumps the version, so old tokens fail immediately.
+const DEVICE_TOKEN_TTL = '365d';
+
+async function enrollDevice(id) {
+  const terminal = await getTerminalById(id);
+  if (!terminal.isActive) throw ApiError.conflict('Reactivate this terminal before enrolling its device');
+  const token = jwt.sign(
+    { sub: terminal.id, tenantId: terminal.tenantId, tv: terminal.tokenVersion, type: 'terminal' },
+    process.env.JWT_SECRET,
+    { expiresIn: DEVICE_TOKEN_TTL }
+  );
+  return { terminalId: terminal.id, token, expiresIn: DEVICE_TOKEN_TTL };
+}
+
+async function revokeDevice(id) {
+  await getTerminalById(id);
+  await prisma.terminal.update({ where: { id }, data: { tokenVersion: { increment: 1 } } });
+  return { terminalId: id, revoked: true };
+}
+
+export default { ...terminalService, enrollDevice, revokeDevice };

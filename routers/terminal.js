@@ -13,6 +13,9 @@ router.get('/', requirePermission('terminals.list'), validate(terminalValidation
 router.get('/:id', requirePermission('terminals.read'), validate(terminalValidation.getById), terminalController.getById);
 router.post('/:id/heartbeat', requirePermission('terminals.heartbeat'), validate(terminalValidation.heartbeat), terminalController.heartbeat);
 
+router.post('/:id/enroll-device', requirePermission('terminals.enroll'), validate(terminalValidation.enrollDevice), terminalController.enrollDevice);
+router.post('/:id/revoke-device', requirePermission('terminals.enroll'), validate(terminalValidation.revokeDevice), terminalController.revokeDevice);
+
 router.post('/', requirePermission('terminals.create'), validate(terminalValidation.create), terminalController.create);
 router.patch('/:id', requirePermission('terminals.update'), validate(terminalValidation.update), terminalController.update);
 router.post('/:id/deactivate', requirePermission('terminals.deactivate'), validate(terminalValidation.deactivate), terminalController.deactivate);

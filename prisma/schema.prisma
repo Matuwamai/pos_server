@@ -40,6 +40,7 @@ model Tenant {
   subdomain           String                   @unique
   plan                String                   @default("trial")
   status              TenantStatus             @default(ACTIVE)
+  logoUrl             String? // path under /uploads, served statically — see services/tenantSelf.js
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
   subscription        Subscription?
@@ -75,6 +76,7 @@ model Tenant {
   smsMessages         SmsMessage[]
   smsCampaigns        SmsCampaign[]
   invoices            Invoice[]
+  syncOps             SyncOp[]
 
   @@index([status])
 }
@@ -107,6 +109,7 @@ model Location {
   address   String?
   timezone  String   @default("UTC")
   isActive  Boolean  @default(true)
+  updatedAt DateTime @default(now()) @updatedAt
   createdAt DateTime @default(now())
 
   tenant              Tenant              @relation(fields: [tenantId], references: [id])
@@ -135,14 +138,18 @@ model Terminal {
   name             String
   deviceIdentifier String    @unique // hardware/app-instance fingerprint
   platform         String? // "web" | "desktop" | "mobile"
+  tokenVersion     Int       @default(0) // bumped to revoke the device token issued by /terminals/:id/enroll-device
   lastSeenAt       DateTime?
   isActive         Boolean   @default(true)
+  updatedAt        DateTime  @default(now()) @updatedAt
   createdAt        DateTime  @default(now())
 
   tenant             Tenant              @relation(fields: [tenantId], references: [id])
   location           Location            @relation(fields: [locationId], references: [id])
   orders             Order[]
   cashDrawerSessions CashDrawerSession[]
+
+  syncOps SyncOp[]
 
   @@index([tenantId])
 }
@@ -176,19 +183,22 @@ model CashDrawerSession {
 // ---------------------------------------------------------------------------
 
 model User {
-  id             String     @id @default(uuid())
-  tenantId       String
-  name           String
-  email          String
-  passwordHash   String
-  pinCode        String? // fast cashier switching on shared terminals
-  role           LegacyRole @default(CASHIER) // being phased out in favor of assignedRole; kept so existing requireRole() routes are unaffected during the migration
-  assignedRoleId String? // the new tenant-defined Role; nullable until every user is backfilled
-  commissionRate Decimal?   @db.Decimal(5, 4) // e.g. 0.05 = 5%, null = no commission
-  phone          String? // required for MFA — a user can't enable it until this is set
-  mfaEnabled     Boolean    @default(false) // opt-in per user, not forced tenant-wide — turning it on for everyone by default would lock out any account with no phone on file
-  isActive       Boolean    @default(true)
-  createdAt      DateTime   @default(now())
+  id                 String     @id @default(uuid())
+  tenantId           String
+  name               String
+  email              String
+  passwordHash       String
+  pinCode            String? // fast cashier switching on shared terminals
+  role               LegacyRole @default(CASHIER) // being phased out in favor of assignedRole; kept so existing requireRole() routes are unaffected during the migration
+  assignedRoleId     String? // the new tenant-defined Role; nullable until every user is backfilled
+  commissionRate     Decimal?   @db.Decimal(5, 4) // e.g. 0.05 = 5%, null = no commission
+  phone              String? // required for MFA — a user can't enable it until this is set
+  mfaEnabled         Boolean    @default(false) // opt-in per user, not forced tenant-wide — turning it on for everyone by default would lock out any account with no phone on file
+  isActive           Boolean    @default(true)
+  updatedAt          DateTime   @default(now()) @updatedAt
+  mustChangePassword Boolean    @default(false) // true after an admin sets/resets the password — enforced server-side in authenticate.js until the user picks their own
+  passwordChangedAt  DateTime? // JWTs issued before this are rejected, so a reset/change signs out every other session
+  createdAt          DateTime   @default(now())
 
   tenant               Tenant              @relation(fields: [tenantId], references: [id])
   assignedRole         Role?               @relation(fields: [assignedRoleId], references: [id])
@@ -202,6 +212,7 @@ model User {
   apiKeysCreated       ApiKey[]
   smsMessages          SmsMessage[]
   smsOtps              SmsOtp[]
+  passwordResets       PasswordReset[]
   smsCampaignsCreated  SmsCampaign[]       @relation("SmsCampaignCreatedBy")
   invoicesCreated      Invoice[]           @relation("InvoiceCreatedBy")
   invoicePaymentsTaken InvoicePayment[]    @relation("InvoicePaymentRecordedBy")
@@ -318,15 +329,16 @@ model EmployeeShift {
 // ---------------------------------------------------------------------------
 
 model Category {
-  id       String     @id @default(uuid())
-  tenantId String
-  name     String
-  parentId String? // supports nested categories
-  isActive Boolean    @default(true)
-  tenant   Tenant     @relation(fields: [tenantId], references: [id])
-  parent   Category?  @relation("CategoryParent", fields: [parentId], references: [id])
-  children Category[] @relation("CategoryParent")
-  products Product[]
+  id        String     @id @default(uuid())
+  tenantId  String
+  name      String
+  parentId  String? // supports nested categories
+  isActive  Boolean    @default(true)
+  updatedAt DateTime   @default(now()) @updatedAt
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  parent    Category?  @relation("CategoryParent", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryParent")
+  products  Product[]
 
   @@index([tenantId])
 }
@@ -340,6 +352,7 @@ model Product {
   isComposite    Boolean  @default(false) // true = made from other variants (e.g. a Latte)
   trackInventory Boolean  @default(true)
   isActive       Boolean  @default(true)
+  updatedAt      DateTime @default(now()) @updatedAt
   createdAt      DateTime @default(now())
 
   tenant         Tenant                 @relation(fields: [tenantId], references: [id])
@@ -361,6 +374,7 @@ model ProductVariant {
   cost       Decimal? @db.Decimal(10, 2) // for margin reporting
   taxRateId  String?
   isActive   Boolean  @default(true)
+  updatedAt  DateTime @default(now()) @updatedAt
   createdAt  DateTime @default(now())
 
   tenant             Tenant              @relation(fields: [tenantId], references: [id])
@@ -395,12 +409,13 @@ model ProductComponent {
 }
 
 model ModifierGroup {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   tenantId  String
   name      String // e.g. "Toppings", "Size Add-ons"
-  minSelect Int     @default(0)
-  maxSelect Int     @default(1)
-  isActive  Boolean @default(true)
+  minSelect Int      @default(0)
+  maxSelect Int      @default(1)
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @default(now()) @updatedAt
 
   tenant    Tenant                 @relation(fields: [tenantId], references: [id])
   modifiers Modifier[]
@@ -410,11 +425,12 @@ model ModifierGroup {
 }
 
 model Modifier {
-  id              String  @id @default(uuid())
+  id              String   @id @default(uuid())
   modifierGroupId String
   name            String // e.g. "Extra Cheese"
-  priceAdjustment Decimal @default(0) @db.Decimal(10, 2)
-  isActive        Boolean @default(true)
+  priceAdjustment Decimal  @default(0) @db.Decimal(10, 2)
+  isActive        Boolean  @default(true)
+  updatedAt       DateTime @default(now()) @updatedAt
 
   modifierGroup ModifierGroup       @relation(fields: [modifierGroupId], references: [id])
   orderItems    OrderItemModifier[]
@@ -564,11 +580,12 @@ model StockTransferItem {
 // ---------------------------------------------------------------------------
 
 model CustomerGroup {
-  id                 String  @id @default(uuid())
+  id                 String   @id @default(uuid())
   tenantId           String
   name               String // e.g. "Wholesale", "VIP"
-  discountPercentage Decimal @default(0) @db.Decimal(5, 4)
-  isActive           Boolean @default(true)
+  discountPercentage Decimal  @default(0) @db.Decimal(5, 4)
+  isActive           Boolean  @default(true)
+  updatedAt          DateTime @default(now()) @updatedAt
 
   tenant    Tenant     @relation(fields: [tenantId], references: [id])
   customers Customer[]
@@ -586,6 +603,7 @@ model Customer {
   marketingOptIn     Boolean  @default(false)
   storeCreditBalance Decimal  @default(0) @db.Decimal(10, 2)
   isActive           Boolean  @default(true)
+  updatedAt          DateTime @default(now()) @updatedAt
   createdAt          DateTime @default(now())
 
   tenant          Tenant                   @relation(fields: [tenantId], references: [id])
@@ -693,6 +711,7 @@ model Promotion {
   startsAt    DateTime?
   endsAt      DateTime?
   isActive    Boolean       @default(true)
+  updatedAt   DateTime      @default(now()) @updatedAt
   createdAt   DateTime      @default(now())
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id])
@@ -707,13 +726,14 @@ model Promotion {
 // ---------------------------------------------------------------------------
 
 model TaxRate {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   tenantId  String
   name      String // e.g. "Standard VAT", "Zero-rated"
-  rate      Decimal @db.Decimal(6, 4) // e.g. 0.16 = 16%
+  rate      Decimal  @db.Decimal(6, 4) // e.g. 0.16 = 16%
   region    String?
-  isDefault Boolean @default(false)
-  isActive  Boolean @default(true)
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @default(now()) @updatedAt
 
   tenant   Tenant           @relation(fields: [tenantId], references: [id])
   variants ProductVariant[]
@@ -734,6 +754,9 @@ model Order {
   userId              String // cashier who rang up the sale
   customerId          String?
   channel             OrderChannel @default(POS)
+  source              OrderSource  @default(ONLINE)
+  terminalReceiptNo   String? // terminal-local receipt number, e.g. T1-20260925-0042
+  terminalCreatedAt   DateTime? // when the terminal rang the sale up (can be long before it synced)
   status              OrderStatus  @default(OPEN)
   subtotal            Decimal      @db.Decimal(10, 2)
   discountTotal       Decimal      @default(0) @db.Decimal(10, 2)
@@ -937,6 +960,14 @@ enum OrderStatus {
   VOIDED
   REFUNDED
   PARTIALLY_REFUNDED
+}
+
+// Where an order originated. OFFLINE_SYNC orders were rung up on a terminal
+// with no connection and carry that terminal's price/tax snapshot, so the
+// server records them as-is instead of recomputing (importOfflineOrder).
+enum OrderSource {
+  ONLINE
+  OFFLINE_SYNC
 }
 
 enum OrderChannel {
@@ -1152,6 +1183,25 @@ model SmsCampaign {
 // No tenantId of its own — reachable only via userId, and looked up during
 // login itself (before any tenant/ALS context exists), same shape as the
 // Tenant/User lookups auth.service.js already does pre-authentication.
+// Self-service "forgot password" codes. Only an HMAC of the code is stored
+// (never the code itself), each row allows a small number of guesses, and
+// like SmsOtp it has no tenantId of its own — it's reached through its User
+// before any tenant context exists.
+model PasswordReset {
+  id        String    @id @default(uuid())
+  userId    String
+  channel   String // SMS | EMAIL
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, usedAt])
+}
+
 model SmsOtp {
   id        String   @id @default(uuid())
   userId    String
@@ -1257,4 +1307,24 @@ model InvoicePayment {
   recordedBy User    @relation("InvoicePaymentRecordedBy", fields: [recordedById], references: [id])
 
   @@index([invoiceId])
+}
+
+// One row per operation a terminal has pushed via /sync/push, keyed by the
+// client-generated opId so a retried upload is recognised and answered with
+// the original result instead of being applied twice.
+model SyncOp {
+  id          String   @id @default(uuid())
+  tenantId    String
+  terminalId  String
+  opId        String
+  type        String
+  status      String // CREATED | REJECTED
+  result      Json
+  processedAt DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  terminal Terminal @relation(fields: [terminalId], references: [id])
+
+  @@unique([tenantId, opId])
+  @@index([terminalId, processedAt])
 }

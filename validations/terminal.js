@@ -49,4 +49,7 @@ const heartbeat = {
   params: idParams,
 };
 
-export default { create, list, getById, update, deactivate, reactivate, heartbeat };
+const enrollDevice = { params: idParams };
+const revokeDevice = { params: idParams };
+
+export default { create, list, getById, update, deactivate, reactivate, heartbeat, enrollDevice, revokeDevice };

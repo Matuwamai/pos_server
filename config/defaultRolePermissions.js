@@ -26,6 +26,7 @@ const CASHIER_CODES = [
   'taxRates.list', 'taxRates.read', 'taxRates.default',
   'orders.list', 'orders.read', 'orders.create',
   'employeeShifts.clockIn', 'employeeShifts.clockOut', 'employeeShifts.readOwn',
+  'sync.pull', 'sync.push',
 ];
 
 // Everything CASHIER has (catalog/reference lookups), plus full ownership

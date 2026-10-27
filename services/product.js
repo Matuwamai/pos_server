@@ -8,7 +8,20 @@ const productInclude = {
   category: { select: { id: true, name: true } },
   variants: { orderBy: { createdAt: 'asc' } },
   modifierGroups: {
-    include: { modifierGroup: { select: { id: true, name: true, minSelect: true, maxSelect: true } } },
+    include: {
+      modifierGroup: {
+        select: {
+          id: true,
+          name: true,
+          minSelect: true,
+          maxSelect: true,
+          // A consumer (e.g. the POS cashier screen) needs the actual
+          // selectable modifiers, not just the group's name/limits, to
+          // render the picker at all.
+          modifiers: { where: { isActive: true }, select: { id: true, name: true, priceAdjustment: true } },
+        },
+      },
+    },
   },
 };
 
@@ -62,10 +75,20 @@ async function createProduct({ categoryId, name, description, isComposite, track
 }
 
 async function listProducts({ search, categoryId, page, limit }) {
+  // A cashier's search box doubles as the barcode-scan input (a scanner just
+  // types the code + Enter), so it needs to hit variant sku/barcode too, not
+  // just the product's own name/description.
   const where = {
     isActive: true,
     ...(categoryId ? { categoryId } : {}),
-    ...searchFilter(search, ['name', 'description']),
+    ...(search
+      ? {
+          OR: [
+            ...searchFilter(search, ['name', 'description']).OR,
+            { variants: { some: { OR: [{ sku: { contains: search } }, { barcode: { contains: search } }] } } },
+          ],
+        }
+      : {}),
   };
 
   const [total, products] = await prisma.$transaction([
@@ -132,13 +155,21 @@ async function attachModifierGroup(productId, modifierGroupId) {
     throw ApiError.conflict('This modifier group is already attached to this product');
   }
 
-  await prisma.productModifierGroup.create({ data: { productId, modifierGroupId } });
+  // Join rows have no updatedAt of their own, so the product itself is touched
+  // — that's what makes the attach visible to a terminal's next sync pull.
+  await prisma.$transaction([
+    prisma.productModifierGroup.create({ data: { productId, modifierGroupId } }),
+    prisma.product.update({ where: { id: productId }, data: { updatedAt: new Date() } }),
+  ]);
   return getProductById(productId);
 }
 
 async function detachModifierGroup(productId, modifierGroupId) {
   await getProductRaw(productId);
-  await prisma.productModifierGroup.deleteMany({ where: { productId, modifierGroupId } });
+  await prisma.$transaction([
+    prisma.productModifierGroup.deleteMany({ where: { productId, modifierGroupId } }),
+    prisma.product.update({ where: { id: productId }, data: { updatedAt: new Date() } }),
+  ]);
   return getProductById(productId);
 }
 
