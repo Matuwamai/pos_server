@@ -38,4 +38,22 @@ const resendOtp = {
   }),
 };
 
-export default { signup, login, verifyOtp, resendOtp };
+// Deliberately the same shape for every input the caller could send — the
+// endpoint answers identically whether or not the account exists.
+const forgotPassword = {
+  body: z.object({
+    subdomain: z.string().regex(subdomainRegex, subdomainMessage),
+    email: z.string().email(),
+  }),
+};
+
+const resetPassword = {
+  body: z.object({
+    subdomain: z.string().regex(subdomainRegex, subdomainMessage),
+    email: z.string().email(),
+    code: z.string().regex(/^\d{6}$/, 'Code must be 6 digits'),
+    newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  }),
+};
+
+export default { signup, login, verifyOtp, resendOtp, forgotPassword, resetPassword };

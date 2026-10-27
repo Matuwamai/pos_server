@@ -153,4 +153,4 @@ function sanitize(user) {
   return safe;
 }
 
-export default { signup, login, verifyLoginOtp, resendLoginOtp };
+export default { signup, login, verifyLoginOtp, resendLoginOtp, signToken };

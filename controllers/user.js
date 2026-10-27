@@ -46,8 +46,8 @@ const reactivate = asyncHandler(async (req, res) => {
 });
 
 const changeOwnPassword = asyncHandler(async (req, res) => {
-  await userService.changeOwnPassword(req.user, req.body);
-  res.status(200).json({ message: 'Password updated' });
+  const { token, user } = await userService.changeOwnPassword(req.user, req.body);
+  res.status(200).json({ message: 'Password updated', token, user });
 });
 
 const resetPassword = asyncHandler(async (req, res) => {

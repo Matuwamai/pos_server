@@ -41,6 +41,8 @@ const authenticate = asyncHandler(async (req, res, next) => {
     where: { id: payload.sub },
     select: {
       isActive: true,
+      mustChangePassword: true,
+      passwordChangedAt: true,
       tenant: {
         select: {
           status: true,
@@ -60,6 +62,28 @@ const authenticate = asyncHandler(async (req, res, next) => {
   }
   if (!user.isActive) {
     throw ApiError.unauthorized('This user account is no longer active');
+  }
+
+  // A password change/reset signs out every session issued before it, so a
+  // stolen or forgotten-open session doesn't survive the owner recovering
+  // their account. JWT `iat` is whole seconds, hence the floored comparison
+  // (a token minted in the same second as the change stays valid).
+  if (user.passwordChangedAt && payload.iat * 1000 < Math.floor(user.passwordChangedAt.getTime() / 1000) * 1000) {
+    throw ApiError.unauthorized('Your password was changed — please sign in again');
+  }
+
+  // An admin-set (or admin-reset) password is only a temporary hand-off:
+  // until the user picks their own, the only things they may do are read
+  // their own profile and change the password. Enforced here rather than
+  // only in the web UI so the API itself can't be used around it.
+  if (user.mustChangePassword) {
+    const path = req.originalUrl.split('?')[0];
+    const allowed =
+      (req.method === 'GET' && path === '/api/v1/users/me') ||
+      (req.method === 'POST' && path === '/api/v1/users/me/change-password');
+    if (!allowed) {
+      throw new ApiError(403, 'You must change your password before continuing', { code: 'PASSWORD_CHANGE_REQUIRED' });
+    }
   }
 
   // The webhook (services/subscription.js) is the primary way this stays

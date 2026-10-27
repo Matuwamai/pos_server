@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import authService from './auth.js';
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import auditLogService from './auditLog.js';
@@ -6,6 +7,13 @@ import roleService from './role.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
 const PRIVILEGED_ROLES = ['OWNER', 'MANAGER'];
+
+// PINs are verified offline on the till, so the server stores only a bcrypt
+// hash — the same cost as passwords. A PIN is a short, low-entropy secret;
+// the hash is what stops a leaked database or roster from exposing it.
+async function hashPin(pin) {
+  return bcrypt.hash(pin, 10);
+}
 
 function sanitize(user) {
   const { passwordHash, ...safe } = user; // eslint-disable-line no-unused-vars
@@ -46,9 +54,13 @@ async function createUser(actingUser, { name, email, password, role, assignedRol
   if (existing) throw ApiError.conflict('A user with this email already exists');
 
   const passwordHash = await bcrypt.hash(password, 10);
+  const pinHash = pinCode ? await hashPin(pinCode) : undefined;
 
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({ data: { name, email, passwordHash, role, assignedRoleId, pinCode, commissionRate } });
+    // The password an admin types in is only a hand-off — the new user must replace it at first sign-in.
+    const user = await tx.user.create({
+      data: { name, email, passwordHash, role, assignedRoleId, pinCode: pinHash, commissionRate, mustChangePassword: true },
+    });
     await auditLogService.recordAuditLog(tx, {
       userId: actingUser.id,
       action: 'user.create',
@@ -69,7 +81,12 @@ async function listUsers({ search, role, isActive, page, limit }) {
 
   const [total, users] = await prisma.$transaction([
     prisma.user.count({ where }),
-    prisma.user.findMany({ where, orderBy: { name: 'asc' }, ...getPagination({ page, limit }) }),
+    prisma.user.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      ...getPagination({ page, limit }),
+      include: { assignedRole: { select: { id: true, name: true } } },
+    }),
   ]);
 
   return { data: users.map(sanitize), pagination: buildPaginationMeta({ page, limit, total }) };
@@ -99,6 +116,7 @@ function assertMfaHasPhone(user, updates) {
 }
 
 async function updateUser(actingUser, id, updates) {
+  if (typeof updates.pinCode === 'string') updates = { ...updates, pinCode: await hashPin(updates.pinCode) };
   const user = await getUserRaw(id); // ensures it exists (and belongs to this tenant), 404s otherwise
   assertCanModifyTarget(actingUser, user);
   if (updates.role) {
@@ -182,9 +200,17 @@ async function changeOwnPassword(actingUser, { currentPassword, newPassword }) {
   const user = await getUserRaw(actingUser.id);
   const valid = await bcrypt.compare(currentPassword, user.passwordHash);
   if (!valid) throw ApiError.unauthorized('Current password is incorrect');
+  if (currentPassword === newPassword) throw ApiError.badRequest('Choose a new password that differs from the current one');
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash, mustChangePassword: false, passwordChangedAt: new Date() },
+  });
+
+  // Every other session was just invalidated (see authenticate.js), so hand
+  // back a fresh token for this one instead of logging the caller out.
+  return { token: authService.signToken(updated), user: sanitize(updated) };
 }
 
 // Admin-driven reset (forgotten password) — no currentPassword check, since
@@ -196,7 +222,7 @@ async function resetPassword(actingUser, id, newPassword) {
   const passwordHash = await bcrypt.hash(newPassword, 10);
 
   await prisma.$transaction(async (tx) => {
-    await tx.user.update({ where: { id }, data: { passwordHash } });
+    await tx.user.update({ where: { id }, data: { passwordHash, mustChangePassword: true, passwordChangedAt: new Date() } });
     await auditLogService.recordAuditLog(tx, {
       userId: actingUser.id,
       action: 'user.password_reset',
