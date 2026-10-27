@@ -18,4 +18,9 @@ const removeLogo = asyncHandler(async (req, res) => {
   res.status(200).json(tenant);
 });
 
-export default { getMine, updateLogo, removeLogo };
+const updatePayments = asyncHandler(async (req, res) => {
+  const tenant = await tenantSelfService.updateTenantPayments(req.tenantId, req.body);
+  res.status(200).json(tenant);
+});
+
+export default { getMine, updateLogo, removeLogo, updatePayments };

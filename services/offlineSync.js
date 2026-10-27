@@ -35,7 +35,14 @@ const ORDER_PAYLOAD = z.object({
     .min(1),
   discounts: z.array(z.object({ amount: z.coerce.number().positive(), reason: z.string().max(255).optional() })).default([]),
   payments: z
-    .array(z.object({ method: z.enum(['CASH', 'CARD', 'OTHER']), amount: z.coerce.number().positive(), transactionRef: z.string().max(255).optional() }))
+    .array(
+      z
+        .object({ method: z.enum(['CASH', 'CARD', 'MPESA', 'OTHER']), amount: z.coerce.number().positive(), transactionRef: z.string().max(255).optional() })
+        .refine((p) => p.method !== 'MPESA' || !!p.transactionRef, {
+          message: 'transactionRef (the M-Pesa confirmation code) is required for MPESA payments',
+          path: ['transactionRef'],
+        })
+    )
     .min(1),
   subtotal: money,
   discountTotal: money,

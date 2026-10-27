@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const idParams = z.object({ id: z.string().uuid() });
-const paymentMethodEnum = z.enum(['CASH', 'CARD', 'GIFT_CARD', 'STORE_CREDIT', 'OTHER']);
+const paymentMethodEnum = z.enum(['CASH', 'CARD', 'MPESA', 'GIFT_CARD', 'STORE_CREDIT', 'OTHER']);
 
 const itemInput = z.object({
   variantId: z.string().uuid(),
@@ -31,6 +31,14 @@ const paymentInput = z
   .refine((d) => d.method !== 'GIFT_CARD' || !!d.giftCardCode, {
     message: 'giftCardCode is required for GIFT_CARD payments',
     path: ['giftCardCode'],
+  })
+  // M-Pesa is confirmed manually in v1 (no Daraja integration yet) — the
+  // cashier reads the SMS confirmation code off the customer's phone and
+  // types it in; without it there's nothing to reconcile the payment
+  // against later.
+  .refine((d) => d.method !== 'MPESA' || !!d.transactionRef, {
+    message: 'transactionRef (the M-Pesa confirmation code) is required for MPESA payments',
+    path: ['transactionRef'],
   });
 
 const create = {

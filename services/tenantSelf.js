@@ -17,11 +17,10 @@ function logoDir(tenantId) {
   return path.join(UPLOADS_ROOT, 'tenants', tenantId);
 }
 
+const SELF_FIELDS = { id: true, name: true, subdomain: true, logoUrl: true, mpesaType: true, mpesaShortcode: true };
+
 async function getMyTenant(tenantId) {
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId },
-    select: { id: true, name: true, subdomain: true, logoUrl: true },
-  });
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: SELF_FIELDS });
   if (!tenant) throw ApiError.notFound('Tenant not found');
   return tenant;
 }
@@ -47,20 +46,21 @@ async function updateTenantLogo(tenantId, file) {
   await fs.writeFile(path.join(dir, `logo${ext}`), file.buffer);
 
   const logoUrl = `/uploads/tenants/${tenantId}/logo${ext}`;
-  return prisma.tenant.update({
-    where: { id: tenantId },
-    data: { logoUrl },
-    select: { id: true, name: true, subdomain: true, logoUrl: true },
-  });
+  return prisma.tenant.update({ where: { id: tenantId }, data: { logoUrl }, select: SELF_FIELDS });
 }
 
 async function removeTenantLogo(tenantId) {
   await clearExistingLogoFiles(tenantId);
-  return prisma.tenant.update({
-    where: { id: tenantId },
-    data: { logoUrl: null },
-    select: { id: true, name: true, subdomain: true, logoUrl: true },
-  });
+  return prisma.tenant.update({ where: { id: tenantId }, data: { logoUrl: null }, select: SELF_FIELDS });
 }
 
-export default { getMyTenant, updateTenantLogo, removeTenantLogo };
+// Till (Buy Goods) or Paybill number, shown at the point of sale so the
+// cashier can tell the customer where to send payment, confirmed manually
+// by typing the M-Pesa SMS code in as the payment's transactionRef — no
+// Daraja API credentials involved yet (see the Phase 4 plan: STK Push
+// automation is a deferred fast-follow, not part of this).
+async function updateTenantPayments(tenantId, { mpesaType, mpesaShortcode }) {
+  return prisma.tenant.update({ where: { id: tenantId }, data: { mpesaType, mpesaShortcode }, select: SELF_FIELDS });
+}
+
+export default { getMyTenant, updateTenantLogo, removeTenantLogo, updateTenantPayments };

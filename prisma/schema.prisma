@@ -41,6 +41,8 @@ model Tenant {
   plan                String                   @default("trial")
   status              TenantStatus             @default(ACTIVE)
   logoUrl             String? // path under /uploads, served statically — see services/tenantSelf.js
+  mpesaType           MpesaShortcodeType?      // null until the tenant sets up M-Pesa
+  mpesaShortcode      String? // the till (Buy Goods) or paybill number customers pay into
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
   subscription        Subscription?
@@ -978,9 +980,19 @@ enum OrderChannel {
 enum PaymentMethod {
   CASH
   CARD
+  MPESA
   GIFT_CARD
   STORE_CREDIT
   OTHER
+}
+
+// TILL = Buy Goods till number, PAYBILL = Paybill shortcode + account number.
+// Only this distinction matters for v1 (manual confirmation): it decides
+// which STK-push TransactionType a later Daraja integration would use, and
+// how the cashier/receipt describe the number to the customer.
+enum MpesaShortcodeType {
+  TILL
+  PAYBILL
 }
 
 enum PaymentStatus {

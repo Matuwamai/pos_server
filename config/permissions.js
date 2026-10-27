@@ -13,6 +13,12 @@ const PERMISSIONS = [
   // user of any role needs it for the topbar/sidebar), only changing it is.
   { code: 'tenant.branding.update', category: 'tenant', description: "Update the tenant's logo" },
 
+  // Same self-service shape as branding: every authenticated user needs to
+  // read the till/paybill number (it's shown at the point of sale so the
+  // cashier can tell the customer where to send M-Pesa payment), only
+  // changing it is gated.
+  { code: 'tenant.payments.update', category: 'tenant', description: "Update the tenant's M-Pesa till/paybill number" },
+
   // Offline terminal sync — pull the catalog down, push sales back up.
   { code: 'sync.pull', category: 'sync', description: 'Download catalog and stock changes for offline use' },
   { code: 'sync.push', category: 'sync', description: 'Upload offline sales and drawer events' },

@@ -67,7 +67,10 @@ async function pullChanges({ since, locationId, limit = DEFAULT_LIMIT }) {
   // Always sent (not filtered by sinceDate): it's one row, not worth a "changed since"
   // dance, and the desktop client decides for itself whether the logo needs
   // re-downloading by comparing updatedAt against what it already cached.
-  const tenant = await prisma.tenant.findUnique({ where: { id: location.tenantId }, select: { name: true, logoUrl: true, updatedAt: true } });
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: location.tenantId },
+    select: { name: true, logoUrl: true, mpesaType: true, mpesaShortcode: true, updatedAt: true },
+  });
   entities.tenant = tenant ? normalise(tenant) : null;
 
   // Staff roster for offline PIN login. The PIN is sent as its bcrypt hash
