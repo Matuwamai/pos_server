@@ -62,6 +62,14 @@ async function pullChanges({ since, locationId, limit = DEFAULT_LIMIT }) {
   let nextSince = serverTime;
   let hasMore = false;
 
+  // Singleton, not a list — a till needs its own tenant's name/logo for printed and
+  // on-screen receipts, available offline once synced at least once (Phase 3).
+  // Always sent (not filtered by sinceDate): it's one row, not worth a "changed since"
+  // dance, and the desktop client decides for itself whether the logo needs
+  // re-downloading by comparing updatedAt against what it already cached.
+  const tenant = await prisma.tenant.findUnique({ where: { id: location.tenantId }, select: { name: true, logoUrl: true, updatedAt: true } });
+  entities.tenant = tenant ? normalise(tenant) : null;
+
   // Staff roster for offline PIN login. The PIN is sent as its bcrypt hash
   // (verified on the till) and permissions are resolved here, so the till
   // enforces the same access the server would. Password hashes never leave.
