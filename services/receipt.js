@@ -44,6 +44,7 @@ async function generateReceiptHtml(orderId) {
 <style>
   body { font-family: 'Courier New', monospace; color: #1a1a1a; max-width: 320px; margin: 0 auto; padding: 16px; font-size: 13px; }
   h1 { font-size: 16px; text-align: center; margin: 0 0 4px; }
+  .logo { display: block; max-width: 120px; max-height: 80px; margin: 0 auto 6px; }
   .center { text-align: center; }
   .muted { color: #555; }
   hr { border: none; border-top: 1px dashed #999; margin: 10px 0; }
@@ -57,6 +58,7 @@ async function generateReceiptHtml(orderId) {
 </style>
 </head>
 <body>
+  ${tenant.logoUrl ? `<img class="logo" src="${escapeHtml(tenant.logoUrl)}" alt="${escapeHtml(tenant.name)}">` : ''}
   <h1>${escapeHtml(tenant.name)}</h1>
   <div class="center muted">${escapeHtml(order.location.name)}</div>
   <div class="center muted">${formatDateTime(order.createdAt)}</div>

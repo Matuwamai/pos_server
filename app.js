@@ -3,6 +3,8 @@
 // requireSuperAdmin.js (imported transitively below) would read their
 // process.env secrets as undefined and silently break auth.
 import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -13,6 +15,8 @@ import prisma from './config/prismaClient.js';
 import requestLogger from './middlewares/requestLogger.js';
 import errorHandler from './middlewares/errorHandler.js';
 import tenantRoutes from './routers/tenant.js';
+import tenantSelfRoutes from './routers/tenantSelf.js';
+import syncRoutes from './routers/sync.js';
 import superAdminRoutes from './routers/superAdmin.js';
 import authRoutes from './routers/auth.js';
 import billingRoutes from './routers/billing.js';
@@ -58,13 +62,21 @@ process.on('unhandledRejection', (reason) => {
   process.exit(1);
 });
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const app = express();
 
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
 app.use(requestLogger);
+// Tenant-uploaded assets (currently just logos) — served before helmet's
+// default CSP would matter for an HTML response, since these are always
+// images fetched via <img>, never navigated to directly.
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use ('/api/v1/tenants', tenantRoutes);
+app.use('/api/v1/tenant', tenantSelfRoutes);
+app.use('/api/v1/sync', syncRoutes);
 app.use('/api/v1/super-admins', superAdminRoutes);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/webhooks', billingRoutes);
