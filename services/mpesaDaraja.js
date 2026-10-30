@@ -105,6 +105,14 @@ async function queryStkPushStatus({ credential, shortcode, checkoutRequestId }) 
     const resultCode = Number(data.ResultCode);
     if (resultCode === 0) return { outcome: 'SUCCESS', resultCode, resultDesc: data.ResultDesc };
     if (resultCode === 1032) return { outcome: 'CANCELLED', resultCode, resultDesc: data.ResultDesc };
+    // Confirmed live against a real (non-sandbox) prompt: Daraja doesn't only signal
+    // "still processing" via an HTTP-level error (the shape above) — it can also
+    // return a normal 200 with ResultCode 4999, "The transaction is still under
+    // processing," while the customer hasn't yet answered the prompt. Treated as
+    // PENDING, same as the HTTP-error shape — the first live test of this code
+    // mapped it straight to FAILED, which was wrong and is exactly the bug this
+    // comment is here to prevent regressing.
+    if (resultCode === 4999) return { outcome: 'PENDING' };
     return { outcome: 'FAILED', resultCode, resultDesc: data.ResultDesc };
   } catch (err) {
     logger.error('Daraja STK status query failed', { message: err.message });

@@ -101,6 +101,22 @@ describe('M-Pesa Daraja response mapping', () => {
     }
   });
 
+  // Regression test: a real (non-sandbox) live test caught this returning
+  // FAILED instead of PENDING — Daraja signals "still processing" two
+  // different ways, not just the HTTP-error shape above.
+  test('queryStkPushStatus maps ResultCode 4999 ("still under processing") to PENDING, not FAILED', async () => {
+    mockFetch(async (url) => {
+      if (String(url).includes('oauth')) return new Response(JSON.stringify({ access_token: 'tok', expires_in: '3599' }), { status: 200 });
+      return new Response(JSON.stringify({ ResultCode: '4999', ResultDesc: 'The transaction is still under processing' }), { status: 200 });
+    });
+    try {
+      const result = await mpesaDaraja.queryStkPushStatus({ credential, shortcode: '174379', checkoutRequestId: 'ws_CO_test' });
+      assert.equal(result.outcome, 'PENDING');
+    } finally {
+      restoreFetch();
+    }
+  });
+
   // Confirmed live: Safaricom's sandbox also rate-limits stkpushquery with
   // a plain HTTP 429 and no errorCode field at all — must also be PENDING.
   test('queryStkPushStatus maps a bare rate-limit response to PENDING', async () => {
