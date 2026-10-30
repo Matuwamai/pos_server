@@ -69,9 +69,14 @@ async function pullChanges({ since, locationId, limit = DEFAULT_LIMIT }) {
   // re-downloading by comparing updatedAt against what it already cached.
   const tenant = await prisma.tenant.findUnique({
     where: { id: location.tenantId },
-    select: { name: true, logoUrl: true, mpesaType: true, mpesaShortcode: true, updatedAt: true },
+    select: { name: true, logoUrl: true, mpesaType: true, mpesaShortcode: true, updatedAt: true, mpesaCredential: { select: { id: true } } },
   });
-  entities.tenant = tenant ? normalise(tenant) : null;
+  if (tenant) {
+    const { mpesaCredential, ...tenantFields } = tenant;
+    entities.tenant = normalise({ ...tenantFields, mpesaStkConfigured: Boolean(mpesaCredential) });
+  } else {
+    entities.tenant = null;
+  }
 
   // Staff roster for offline PIN login. The PIN is sent as its bcrypt hash
   // (verified on the till) and permissions are resolved here, so the till

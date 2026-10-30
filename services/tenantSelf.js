@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
+import mpesaCredentialService from './mpesaCredential.js';
 
 // Tenant has no tenantId column of its own, so it's NOT one of the
 // auto-scoped models in config/prismaClient.js — every query here filters
@@ -17,12 +18,28 @@ function logoDir(tenantId) {
   return path.join(UPLOADS_ROOT, 'tenants', tenantId);
 }
 
-const SELF_FIELDS = { id: true, name: true, subdomain: true, logoUrl: true, mpesaType: true, mpesaShortcode: true };
+const SELF_FIELDS = {
+  id: true,
+  name: true,
+  subdomain: true,
+  logoUrl: true,
+  mpesaType: true,
+  mpesaShortcode: true,
+  mpesaCredential: { select: { environment: true } },
+};
+
+// Never exposes the credential itself — only whether one exists and which
+// environment it targets, so the settings page can show a "configured"
+// state without the secrets ever round-tripping back to a client.
+function present(tenant) {
+  const { mpesaCredential, ...rest } = tenant;
+  return { ...rest, mpesaStkConfigured: Boolean(mpesaCredential), mpesaStkEnvironment: mpesaCredential?.environment ?? null };
+}
 
 async function getMyTenant(tenantId) {
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: SELF_FIELDS });
   if (!tenant) throw ApiError.notFound('Tenant not found');
-  return tenant;
+  return present(tenant);
 }
 
 // Removes any previously-saved logo file for this tenant regardless of its
@@ -46,21 +63,42 @@ async function updateTenantLogo(tenantId, file) {
   await fs.writeFile(path.join(dir, `logo${ext}`), file.buffer);
 
   const logoUrl = `/uploads/tenants/${tenantId}/logo${ext}`;
-  return prisma.tenant.update({ where: { id: tenantId }, data: { logoUrl }, select: SELF_FIELDS });
+  return present(await prisma.tenant.update({ where: { id: tenantId }, data: { logoUrl }, select: SELF_FIELDS }));
 }
 
 async function removeTenantLogo(tenantId) {
   await clearExistingLogoFiles(tenantId);
-  return prisma.tenant.update({ where: { id: tenantId }, data: { logoUrl: null }, select: SELF_FIELDS });
+  return present(await prisma.tenant.update({ where: { id: tenantId }, data: { logoUrl: null }, select: SELF_FIELDS }));
 }
 
 // Till (Buy Goods) or Paybill number, shown at the point of sale so the
 // cashier can tell the customer where to send payment, confirmed manually
-// by typing the M-Pesa SMS code in as the payment's transactionRef — no
-// Daraja API credentials involved yet (see the Phase 4 plan: STK Push
-// automation is a deferred fast-follow, not part of this).
+// by typing the M-Pesa SMS code in as the payment's transactionRef. This
+// is independent of whether STK push (below) is also configured — manual
+// entry always works as the fallback.
 async function updateTenantPayments(tenantId, { mpesaType, mpesaShortcode }) {
-  return prisma.tenant.update({ where: { id: tenantId }, data: { mpesaType, mpesaShortcode }, select: SELF_FIELDS });
+  return present(await prisma.tenant.update({ where: { id: tenantId }, data: { mpesaType, mpesaShortcode }, select: SELF_FIELDS }));
 }
 
-export default { getMyTenant, updateTenantLogo, removeTenantLogo, updateTenantPayments };
+// STK push: each tenant's own Daraja app credentials, tied to the till/
+// paybill already set via updateTenantPayments. Secrets are encrypted at
+// rest (services/mpesaCredential.js) and never returned — present() only
+// ever exposes mpesaStkConfigured/mpesaStkEnvironment.
+async function updateMpesaCredential(tenantId, { consumerKey, consumerSecret, passkey, environment }) {
+  await mpesaCredentialService.upsertCredential(tenantId, { consumerKey, consumerSecret, passkey, environment });
+  return getMyTenant(tenantId);
+}
+
+async function removeMpesaCredential(tenantId) {
+  await mpesaCredentialService.removeCredential(tenantId);
+  return getMyTenant(tenantId);
+}
+
+export default {
+  getMyTenant,
+  updateTenantLogo,
+  removeTenantLogo,
+  updateTenantPayments,
+  updateMpesaCredential,
+  removeMpesaCredential,
+};

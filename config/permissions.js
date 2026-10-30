@@ -23,6 +23,13 @@ const PERMISSIONS = [
   { code: 'sync.pull', category: 'sync', description: 'Download catalog and stock changes for offline use' },
   { code: 'sync.push', category: 'sync', description: 'Upload offline sales and drawer events' },
 
+  // M-Pesa STK Push — each tenant's own Daraja credentials, configured
+  // once by an owner/manager; sending/polling a prompt is a normal till
+  // action, same trust level as ringing up a sale.
+  { code: 'tenant.mpesaStk.update', category: 'tenant', description: "Configure the tenant's Daraja (M-Pesa STK push) credentials" },
+  { code: 'paymentIntents.create', category: 'paymentIntents', description: 'Send an M-Pesa STK push prompt' },
+  { code: 'paymentIntents.read', category: 'paymentIntents', description: 'Check the status of an M-Pesa STK push prompt' },
+
   // locations
   { code: 'locations.list', category: 'locations', description: 'List locations' },
   { code: 'locations.read', category: 'locations', description: 'View a location' },

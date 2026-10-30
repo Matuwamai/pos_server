@@ -27,6 +27,7 @@ const CASHIER_CODES = [
   'orders.list', 'orders.read', 'orders.create',
   'employeeShifts.clockIn', 'employeeShifts.clockOut', 'employeeShifts.readOwn',
   'sync.pull', 'sync.push',
+  'paymentIntents.create', 'paymentIntents.read',
 ];
 
 // Everything CASHIER has (catalog/reference lookups), plus full ownership

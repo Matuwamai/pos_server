@@ -10,7 +10,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // Terminal device tokens carry no user: a till's cashier is established
 // offline (PIN) and sent per-sale, so the device itself gets a fixed,
 // narrow permission set rather than a role.
-const TERMINAL_PERMISSIONS = new Set(['sync.pull', 'sync.push']);
+const TERMINAL_PERMISSIONS = new Set(['sync.pull', 'sync.push', 'paymentIntents.create', 'paymentIntents.read']);
 
 // Device tokens are long-lived, so revocation is server-side: every request
 // re-checks the terminal row. Bumping tokenVersion (revoke) or deactivating

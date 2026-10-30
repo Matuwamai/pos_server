@@ -23,4 +23,14 @@ const updatePayments = asyncHandler(async (req, res) => {
   res.status(200).json(tenant);
 });
 
-export default { getMine, updateLogo, removeLogo, updatePayments };
+const updateMpesaCredential = asyncHandler(async (req, res) => {
+  const tenant = await tenantSelfService.updateMpesaCredential(req.tenantId, req.body);
+  res.status(200).json(tenant);
+});
+
+const removeMpesaCredential = asyncHandler(async (req, res) => {
+  const tenant = await tenantSelfService.removeMpesaCredential(req.tenantId);
+  res.status(200).json(tenant);
+});
+
+export default { getMine, updateLogo, removeLogo, updatePayments, updateMpesaCredential, removeMpesaCredential };

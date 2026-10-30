@@ -27,4 +27,16 @@ export default {
     recovery: Number(process.env.RATE_LIMIT_RECOVERY) || 10,
     signup: Number(process.env.RATE_LIMIT_SIGNUP) || 10,
   },
+  // AES-256-GCM key (base64, 32 bytes) for encrypting tenant M-Pesa Daraja
+  // credentials at rest — see utils/encryption.js.
+  dataEncryptionKey: process.env.DATA_ENCRYPTION_KEY || null,
+  mpesa: {
+    // Base URL Safaricom's STK callback is pointed at. In production this
+    // must be a publicly reachable https URL; in dev it can be anything
+    // (even unreachable) since status is resolved primarily by polling
+    // stkpushquery — the callback only backfills the real receipt number,
+    // it's not required for the go/no-go status itself (see
+    // services/mpesaPaymentIntent.js).
+    callbackBaseUrl: process.env.MPESA_CALLBACK_BASE_URL || null,
+  },
 };

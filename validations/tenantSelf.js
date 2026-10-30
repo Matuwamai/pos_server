@@ -17,4 +17,13 @@ const updatePayments = {
     }),
 };
 
-export default { updatePayments };
+const updateMpesaCredential = {
+  body: z.object({
+    consumerKey: z.string().min(1),
+    consumerSecret: z.string().min(1),
+    passkey: z.string().min(1),
+    environment: z.enum(['SANDBOX', 'PRODUCTION']).default('SANDBOX'),
+  }),
+};
+
+export default { updatePayments, updateMpesaCredential };

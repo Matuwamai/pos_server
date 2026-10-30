@@ -20,4 +20,7 @@ router.delete('/logo', requirePermission('tenant.branding.update'), tenantSelfCo
 
 router.patch('/payments', requirePermission('tenant.payments.update'), validate(tenantSelfValidation.updatePayments), tenantSelfController.updatePayments);
 
+router.patch('/mpesa-credential', requirePermission('tenant.mpesaStk.update'), validate(tenantSelfValidation.updateMpesaCredential), tenantSelfController.updateMpesaCredential);
+router.delete('/mpesa-credential', requirePermission('tenant.mpesaStk.update'), tenantSelfController.removeMpesaCredential);
+
 export default router;

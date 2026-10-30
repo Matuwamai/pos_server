@@ -79,8 +79,75 @@ model Tenant {
   smsCampaigns        SmsCampaign[]
   invoices            Invoice[]
   syncOps             SyncOp[]
+  mpesaCredential     MpesaCredential?
+  mpesaPaymentIntents MpesaPaymentIntent[]
 
   @@index([status])
+}
+
+// Per-tenant Daraja API app — each tenant goes live on their own M-Pesa
+// till/paybill (Tenant.mpesaShortcode) using their own consumer key/secret/
+// passkey, never a shared/platform account. Secrets are encrypted at rest
+// (utils/encryption.js) and never returned by any API response — only
+// whether a credential exists (see services/tenantSelf.js's
+// `mpesaStkConfigured`) is ever exposed.
+model MpesaCredential {
+  id                   String           @id @default(uuid())
+  tenantId             String           @unique
+  environment          MpesaEnvironment @default(SANDBOX)
+  consumerKeyCipher    String
+  consumerSecretCipher String
+  passkeyCipher        String
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+enum MpesaEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
+// One STK Push attempt. Short-lived by design (`expiresAt`) — this is a
+// pre-step that resolves to a `transactionRef` before the client ever calls
+// `POST /orders`; it's never itself the record of a sale (see
+// services/mpesaPaymentIntent.js's doc comment for the full reasoning).
+model MpesaPaymentIntent {
+  id                 String                   @id @default(uuid())
+  tenantId           String
+  terminalId         String?
+  locationId         String?
+  initiatedByUserId  String?
+  amount             Decimal                  @db.Decimal(10, 2)
+  phoneNumber        String
+  status             MpesaPaymentIntentStatus @default(PENDING)
+  checkoutRequestId  String?                  @unique
+  merchantRequestId  String?
+  resultCode         Int?
+  resultDesc         String?
+  mpesaReceiptNumber String?
+  expiresAt          DateTime
+  // Throttles live Daraja stkpushquery calls independently of how often a
+  // client polls GET /payment-intents/:id — Safaricom's sandbox enforces a
+  // tight rate limit (observed: a burst of ~3 requests/minute), confirmed
+  // live while building this (see services/mpesaPaymentIntent.js).
+  lastPolledAt       DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+enum MpesaPaymentIntentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+  TIMEOUT
 }
 
 // Billing for the tenant's own subscription to YOUR platform (not their
