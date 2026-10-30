@@ -84,6 +84,9 @@ const refund = {
       reason: z.string().max(255).optional(),
       refundMethod: paymentMethodEnum,
       giftCardCode: z.string().optional(),
+      // Only used when the caller has no session user (a device/terminal
+      // token) — see controllers/order.js and services/order.js's refundOrder.
+      processedByUserId: z.string().uuid().optional(),
     })
     .refine((d) => d.refundMethod !== 'GIFT_CARD' || !!d.giftCardCode, {
       message: 'giftCardCode is required when refunding to a gift card',

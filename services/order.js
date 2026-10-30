@@ -357,6 +357,15 @@ async function refundOrder(id, actingUser, { items, reason, refundMethod, giftCa
     throw ApiError.badRequest('A customer is required to refund to store credit');
   }
 
+  // A device (terminal) token has no req.user (authenticateTerminal.js sets it
+  // null) — the signed-in cashier's id travels in the request body instead
+  // (validations/order.js's processedByUserId), the same trust boundary
+  // services/offlineSync.js's assertCashier already relies on for cashierId.
+  // Re-validated here regardless of which path supplied actingUser.
+  if (!actingUser?.id) throw ApiError.badRequest('A valid acting user is required to process a refund');
+  const processor = await prisma.user.findUnique({ where: { id: actingUser.id } });
+  if (!processor || !processor.isActive) throw ApiError.badRequest('processedByUserId is not an active user of this business');
+
   await prisma.$transaction(async (tx) => {
     const validated = [];
     let totalAmount = 0;
