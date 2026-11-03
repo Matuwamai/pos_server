@@ -4,6 +4,7 @@ import ApiError from '../utils/ApiError.js';
 import inventoryService from './inventory.js';
 import salesSummaryService from './salesSummary.js';
 import auditLogService from './auditLog.js';
+import orderService from './order.js';
 
 // The till prices and taxes a sale itself, offline. The server does not
 // reprice it: it checks the arithmetic is internally consistent, records the
@@ -33,14 +34,34 @@ const ORDER_PAYLOAD = z.object({
       })
     )
     .min(1),
-  discounts: z.array(z.object({ amount: z.coerce.number().positive(), reason: z.string().max(255).optional() })).default([]),
+  // Unlike validations/order.js's discountInput (where `amount` can be left
+  // out and computed server-side from the promotion), `amount` stays
+  // required here: the till already priced this sale locally — including
+  // any promo-code discount, previewed before the cashier applied it — so
+  // the server has a concrete number to arithmetic-check against, same as
+  // every other field in this payload. `promotionCode`, when present, is
+  // used to re-validate the promotion is *still* active/in-window at the
+  // moment this op is actually processed (which may be well after the
+  // cashier applied it offline), not to (re)compute the amount.
+  discounts: z
+    .array(z.object({ promotionCode: z.string().optional(), amount: z.coerce.number().positive(), reason: z.string().max(255).optional() }))
+    .default([]),
   payments: z
     .array(
       z
-        .object({ method: z.enum(['CASH', 'CARD', 'MPESA', 'OTHER']), amount: z.coerce.number().positive(), transactionRef: z.string().max(255).optional() })
+        .object({
+          method: z.enum(['CASH', 'CARD', 'MPESA', 'GIFT_CARD', 'STORE_CREDIT', 'OTHER']),
+          amount: z.coerce.number().positive(),
+          transactionRef: z.string().max(255).optional(),
+          giftCardCode: z.string().optional(),
+        })
         .refine((p) => p.method !== 'MPESA' || !!p.transactionRef, {
           message: 'transactionRef (the M-Pesa confirmation code) is required for MPESA payments',
           path: ['transactionRef'],
+        })
+        .refine((p) => p.method !== 'GIFT_CARD' || !!p.giftCardCode, {
+          message: 'giftCardCode is required for GIFT_CARD payments',
+          path: ['giftCardCode'],
         })
     )
     .min(1),
@@ -191,21 +212,37 @@ async function importOfflineOrder(tx, terminal, payload) {
   }
 
   for (const d of p.discounts) {
-    await tx.orderDiscount.create({ data: { orderId: order.id, appliedByUserId: cashier.id, amount: d.amount, reason: d.reason } });
+    // Re-validates a promo code against *current* server state (it may have
+    // been deactivated or expired since the cashier applied it offline) and
+    // enforces the same manager/owner gate on manual discounts the online
+    // path already has — neither was checked server-side for offline sales
+    // before this. The till's own pre-computed `amount` is kept as-is
+    // (resolveDiscountInput only recomputes when amount is omitted, which
+    // never happens in this payload).
+    const { promotionId, amount, reason } = await orderService.resolveDiscountInput(tx, {
+      discountInput: d,
+      subtotal,
+      actingUser: cashier,
+    });
+    await tx.orderDiscount.create({ data: { orderId: order.id, promotionId, appliedByUserId: cashier.id, amount, reason } });
     await auditLogService.recordAuditLog(tx, {
       userId: cashier.id,
-      action: 'order.discount.manual',
+      action: promotionId ? 'order.discount.promotion' : 'order.discount.manual',
       entityType: 'Order',
       entityId: order.id,
-      metadata: { amount: d.amount, reason: d.reason, source: 'OFFLINE_SYNC' },
+      metadata: { amount, reason, promotionCode: d.promotionCode, source: 'OFFLINE_SYNC' },
     });
   }
 
   for (const pay of p.payments) {
-    await tx.payment.create({
-      data: { orderId: order.id, method: pay.method, amount: pay.amount, status: 'CAPTURED', transactionRef: pay.transactionRef },
-    });
+    // Same STORE_CREDIT/GIFT_CARD balance check + decrement the online path
+    // uses, inside this same per-op transaction — the actual protection
+    // against double-spending a card across two offline tills, since each
+    // sync op reads the balance fresh right before deciding.
+    await orderService.createPaymentWithSideEffects(tx, { payment: pay, orderId: order.id, customerId: p.customerId });
   }
+
+  await orderService.earnLoyaltyPoints(tx, { customerId: p.customerId, orderId: order.id, total });
 
   await salesSummaryService.applySalesForOrder(tx, {
     locationId: p.locationId,

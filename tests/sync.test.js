@@ -6,6 +6,7 @@
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import prisma from '../config/prismaClient.js';
 
 const BASE = process.env.TEST_BASE_URL || 'http://localhost:4000/api/v1';
 const CONFIGURED = Boolean(process.env.TEST_SUBDOMAIN && process.env.TEST_EMAIL && process.env.TEST_PASSWORD);
@@ -115,10 +116,114 @@ describe('offline sync', { skip }, () => {
     assert.equal(again.body.results[0].status, 'REJECTED', 'a rejected op keeps its rejection on replay');
   });
 
-  test('gift card tenders cannot be recorded offline', async () => {
+  test('a gift card payment with no code is rejected', async () => {
     const id = randomUUID();
     const res = await push([{ opId: `gc-${id}`, type: 'order.create', payload: saleFor(id, { payments: [{ method: 'GIFT_CARD', amount: 5 }] }) }]);
     assert.equal(res.body.results[0].status, 'REJECTED');
+  });
+
+  test('a gift card can be redeemed offline when a valid code is given, and its balance decrements', async () => {
+    const issued = await call('POST', '/gift-cards', { token: owner, body: { initialBalance: 10 } });
+    assert.equal(issued.status, 201, JSON.stringify(issued.body));
+    const code = issued.body.code;
+
+    const id = randomUUID();
+    const sale = saleFor(id, { total: 3.58, payments: [{ method: 'GIFT_CARD', amount: 3.58, giftCardCode: code }] });
+    const res = await push([{ opId: `gc-ok-${id}`, type: 'order.create', payload: sale }]);
+    assert.equal(res.body.results[0].status, 'CREATED', JSON.stringify(res.body.results[0]));
+
+    const card = await call('GET', `/gift-cards/${issued.body.id}`, { token: owner });
+    assert.equal(Number(card.body.currentBalance), 10 - 3.58);
+  });
+
+  test('a gift card redemption that exceeds its remaining balance is rejected', async () => {
+    const issued = await call('POST', '/gift-cards', { token: owner, body: { initialBalance: 1 } });
+    const code = issued.body.code;
+
+    const id = randomUUID();
+    const sale = saleFor(id, { total: 3.58, payments: [{ method: 'GIFT_CARD', amount: 3.58, giftCardCode: code }] });
+    const res = await push([{ opId: `gc-over-${id}`, type: 'order.create', payload: sale }]);
+    assert.equal(res.body.results[0].status, 'REJECTED');
+    assert.match(res.body.results[0].result.error, /Insufficient gift card balance/);
+
+    const card = await call('GET', `/gift-cards/${issued.body.id}`, { token: owner });
+    assert.equal(Number(card.body.currentBalance), 1, 'a rejected redemption must not touch the balance');
+  });
+
+  test('two offline sales racing to redeem the same gift card — the second is rejected with a fresh balance read', async () => {
+    const issued = await call('POST', '/gift-cards', { token: owner, body: { initialBalance: 5 } });
+    const code = issued.body.code;
+
+    const firstId = randomUUID();
+    const first = await push([
+      { opId: `gc-race-1-${firstId}`, type: 'order.create', payload: saleFor(firstId, { total: 3.58, payments: [{ method: 'GIFT_CARD', amount: 3.58, giftCardCode: code }] }) },
+    ]);
+    assert.equal(first.body.results[0].status, 'CREATED');
+
+    const secondId = randomUUID();
+    const second = await push([
+      { opId: `gc-race-2-${secondId}`, type: 'order.create', payload: saleFor(secondId, { total: 3.58, payments: [{ method: 'GIFT_CARD', amount: 3.58, giftCardCode: code }] }) },
+    ]);
+    assert.equal(second.body.results[0].status, 'REJECTED', 'the second sync op must read the balance fresh and reject, not trust a stale local read');
+    assert.match(second.body.results[0].result.error, /Insufficient gift card balance/);
+  });
+
+  test('store credit redemption beyond the customer\'s balance is rejected, and a valid redemption decrements it', async () => {
+    const customer = await call('POST', '/customers', { token: owner, body: { name: 'Store Credit Test Customer' } });
+    const customerId = customer.body.id;
+    await call('POST', '/store-credit-transactions/issue', { token: owner, body: { customerId, amount: 2 } });
+
+    const overId = randomUUID();
+    const over = await push([
+      { opId: `sc-over-${overId}`, type: 'order.create', payload: { ...saleFor(overId, { total: 3.58, payments: [{ method: 'STORE_CREDIT', amount: 3.58 }] }), customerId } },
+    ]);
+    assert.equal(over.body.results[0].status, 'REJECTED');
+    assert.match(over.body.results[0].result.error, /Insufficient store credit/);
+
+    await call('POST', '/store-credit-transactions/issue', { token: owner, body: { customerId, amount: 10 } }); // top up to 12
+    const okId = randomUUID();
+    const ok = await push([
+      { opId: `sc-ok-${okId}`, type: 'order.create', payload: { ...saleFor(okId, { total: 3.58, payments: [{ method: 'STORE_CREDIT', amount: 3.58 }] }), customerId } },
+    ]);
+    assert.equal(ok.body.results[0].status, 'CREATED', JSON.stringify(ok.body.results[0]));
+
+    const after = await call('GET', `/customers/${customerId}`, { token: owner });
+    assert.equal(Number(after.body.storeCreditBalance), 12 - 3.58);
+  });
+
+  test('a promo code that is no longer active is rejected even though the till already computed the discount offline', async () => {
+    const promo = await call('POST', '/promotions', { token: owner, body: { name: 'Offline Test Promo', code: `OFFTEST${randomUUID().slice(0, 6).toUpperCase()}`, type: 'FIXED_AMOUNT', value: 1 } });
+    assert.equal(promo.status, 201, JSON.stringify(promo.body));
+    await call('POST', `/promotions/${promo.body.id}/deactivate`, { token: owner });
+
+    const id = randomUUID();
+    const sale = saleFor(id, { total: 2.58, payments: [{ method: 'CASH', amount: 2.58 }] });
+    sale.discounts = [{ promotionCode: promo.body.code, amount: 1 }];
+    sale.discountTotal = 1;
+    const res = await push([{ opId: `promo-inactive-${id}`, type: 'order.create', payload: sale }]);
+    assert.equal(res.body.results[0].status, 'REJECTED');
+    assert.match(res.body.results[0].result.error, /not active/);
+  });
+
+  test('a manual (no-code) discount from a non-manager cashier is rejected offline, same as it already is online', async () => {
+    const cashier = await call('POST', '/users', {
+      token: owner,
+      body: { name: 'Plain Cashier', email: `cashier-${randomUUID()}@example.com`, password: 'TestPass123!', role: 'CASHIER' },
+    });
+    assert.equal(cashier.status, 201, JSON.stringify(cashier.body));
+    // A brand-new user always starts mustChangePassword:true — irrelevant to what
+    // this test is actually checking (the manager-only discount gate), so it's
+    // cleared directly rather than running a full change-password flow just to
+    // get a sellable cashier.
+    await prisma.user.update({ where: { id: cashier.body.id }, data: { mustChangePassword: false } });
+
+    const id = randomUUID();
+    const sale = { ...saleFor(id, { total: 2.58, payments: [{ method: 'CASH', amount: 2.58 }] }), cashierId: cashier.body.id };
+    sale.discounts = [{ amount: 1, reason: 'friends and family' }];
+    sale.discountTotal = 1;
+    const res = await push([{ opId: `manual-discount-${id}`, type: 'order.create', payload: sale }]);
+    assert.equal(res.body.results[0].status, 'REJECTED');
+    assert.match(res.body.results[0].result.error, /Only a manager/);
   });
 
   test('an oversell is accepted with a warning and the stock is reversed afterwards', async () => {

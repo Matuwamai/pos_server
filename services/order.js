@@ -137,6 +137,77 @@ async function restockInventoryForRefund(tx, { variant, quantity, locationId, re
   }
 }
 
+// Shared with services/offlineSync.js's importOfflineOrder, so the online
+// (POST /orders) and offline-sync order-creation paths enforce identical
+// promotion/gift-card/store-credit/loyalty rules from exactly one place
+// rather than two copies that could drift.
+
+// Resolves one discount input to a concrete {promotionId, amount, reason} —
+// pricing/validation only, not the DB write, since the two call sites write
+// discount rows slightly differently (bulk createMany with a grouped audit
+// log vs. one row at a time with a per-row audit log).
+async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser }) {
+  let promotionId = null;
+  let amount = discountInput.amount;
+
+  if (discountInput.promotionCode) {
+    const promotion = await promotionService.getValidPromotionByCode(discountInput.promotionCode);
+    if (promotion.minSubtotal && subtotal < Number(promotion.minSubtotal)) {
+      throw ApiError.conflict(`This promotion requires a subtotal of at least ${promotion.minSubtotal}`);
+    }
+    promotionId = promotion.id;
+    if (amount === undefined) {
+      if (promotion.type === 'PERCENTAGE') amount = round2(subtotal * (Number(promotion.value) / 100));
+      else if (promotion.type === 'FIXED_AMOUNT') amount = Number(promotion.value);
+      else throw ApiError.badRequest('A BOGO promotion requires an explicit discount amount');
+    }
+  } else if (!['OWNER', 'MANAGER'].includes(actingUser.role)) {
+    // A promo-code discount is driven by a code anyone can enter; a
+    // discount with no code is pure staff discretion, so it's gated.
+    throw ApiError.forbidden('Only a manager can apply a manual discount');
+  }
+
+  return { promotionId, amount, reason: discountInput.reason };
+}
+
+// Creates the Payment row and, for STORE_CREDIT/GIFT_CARD, the matching
+// balance check + decrement — all inside the caller's transaction so the
+// balance read and the decrement can never race across two sales.
+async function createPaymentWithSideEffects(tx, { payment, orderId, customerId }) {
+  await tx.payment.create({
+    data: { orderId, method: payment.method, amount: payment.amount, status: 'CAPTURED', transactionRef: payment.transactionRef },
+  });
+
+  if (payment.method === 'STORE_CREDIT') {
+    if (!customerId) throw ApiError.badRequest('A customer is required to pay with store credit');
+    await storeCreditTransactionService.applyStoreCreditChange(tx, { customerId, orderId, type: 'REDEEM', amount: -payment.amount });
+  }
+
+  if (payment.method === 'GIFT_CARD') {
+    // Looked up via `tx` (not giftCardService.getCardByCode, which uses the
+    // plain client) so the balance check/decrement stays inside this same
+    // transaction.
+    const giftCard = await tx.giftCard.findFirst({ where: { code: payment.giftCardCode } });
+    if (!giftCard) throw ApiError.notFound('Gift card not found');
+    giftCardService.assertUsable(giftCard);
+    await giftCardService.applyGiftCardChange(tx, { giftCard, type: 'REDEEM', amount: -payment.amount, orderId });
+  }
+}
+
+// Auto-earn on completion, if there's a customer and an active program. No
+// "pay with points" here — PaymentMethod has no such option; point
+// redemption stays a separate action via /loyalty-transactions/redeem.
+async function earnLoyaltyPoints(tx, { customerId, orderId, total }) {
+  if (!customerId) return;
+  const program = await tx.loyaltyProgram.findFirst();
+  if (program && program.isActive) {
+    const points = Math.floor(total * Number(program.pointsPerCurrencyUnit));
+    if (points > 0) {
+      await tx.loyaltyTransaction.create({ data: { customerId, orderId, type: 'EARN', points } });
+    }
+  }
+}
+
 function buildOrderSearchFilter(search) {
   if (!search) return {};
   const asNumber = Number(search);
@@ -178,28 +249,9 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
     let discountTotal = 0;
     const discountRows = [];
     for (const discountInput of discounts || []) {
-      let promotionId = null;
-      let amount = discountInput.amount;
-
-      if (discountInput.promotionCode) {
-        const promotion = await promotionService.getValidPromotionByCode(discountInput.promotionCode);
-        if (promotion.minSubtotal && subtotal < Number(promotion.minSubtotal)) {
-          throw ApiError.conflict(`This promotion requires a subtotal of at least ${promotion.minSubtotal}`);
-        }
-        promotionId = promotion.id;
-        if (amount === undefined) {
-          if (promotion.type === 'PERCENTAGE') amount = round2(subtotal * (Number(promotion.value) / 100));
-          else if (promotion.type === 'FIXED_AMOUNT') amount = Number(promotion.value);
-          else throw ApiError.badRequest('A BOGO promotion requires an explicit discount amount');
-        }
-      } else if (!['OWNER', 'MANAGER'].includes(actingUser.role)) {
-        // A promo-code discount is driven by a code anyone can enter; a
-        // discount with no code is pure staff discretion, so it's gated.
-        throw ApiError.forbidden('Only a manager can apply a manual discount');
-      }
-
+      const { promotionId, amount, reason } = await resolveDiscountInput(tx, { discountInput, subtotal, actingUser });
       discountTotal += amount;
-      discountRows.push({ promotionId, appliedByUserId: actingUser.id, amount, reason: discountInput.reason });
+      discountRows.push({ promotionId, appliedByUserId: actingUser.id, amount, reason });
     }
     discountTotal = round2(discountTotal);
 
@@ -270,43 +322,10 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
     }
 
     for (const payment of payments) {
-      await tx.payment.create({
-        data: { orderId: order.id, method: payment.method, amount: payment.amount, status: 'CAPTURED', transactionRef: payment.transactionRef },
-      });
-
-      if (payment.method === 'STORE_CREDIT') {
-        if (!customerId) throw ApiError.badRequest('A customer is required to pay with store credit');
-        await storeCreditTransactionService.applyStoreCreditChange(tx, {
-          customerId,
-          orderId: order.id,
-          type: 'REDEEM',
-          amount: -payment.amount,
-        });
-      }
-
-      if (payment.method === 'GIFT_CARD') {
-        // Looked up via `tx` (not giftCardService.getCardByCode, which uses
-        // the plain client) so the balance check/decrement stays inside
-        // this same transaction.
-        const giftCard = await tx.giftCard.findFirst({ where: { code: payment.giftCardCode } });
-        if (!giftCard) throw ApiError.notFound('Gift card not found');
-        giftCardService.assertUsable(giftCard);
-        await giftCardService.applyGiftCardChange(tx, { giftCard, type: 'REDEEM', amount: -payment.amount, orderId: order.id });
-      }
+      await createPaymentWithSideEffects(tx, { payment, orderId: order.id, customerId });
     }
 
-    // Auto-earn on completion, if there's a customer and an active program.
-    // No "pay with points" here — PaymentMethod has no such option; point
-    // redemption stays a separate action via /loyalty-transactions/redeem.
-    if (customerId) {
-      const program = await prisma.loyaltyProgram.findFirst();
-      if (program && program.isActive) {
-        const points = Math.floor(total * Number(program.pointsPerCurrencyUnit));
-        if (points > 0) {
-          await tx.loyaltyTransaction.create({ data: { customerId, orderId: order.id, type: 'EARN', points } });
-        }
-      }
-    }
+    await earnLoyaltyPoints(tx, { customerId, orderId: order.id, total });
 
     const itemCount = pricedItems.reduce((sum, priced) => sum + priced.quantity, 0);
     await salesSummaryService.applySalesForOrder(tx, {
@@ -444,4 +463,12 @@ async function refundOrder(id, actingUser, { items, reason, refundMethod, giftCa
   return getOrderById(id);
 }
 
-export default { createOrder, listOrders, getOrderById, refundOrder };
+export default {
+  createOrder,
+  listOrders,
+  getOrderById,
+  refundOrder,
+  resolveDiscountInput,
+  createPaymentWithSideEffects,
+  earnLoyaltyPoints,
+};
