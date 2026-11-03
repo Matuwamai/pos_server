@@ -16,6 +16,10 @@ const TERMINAL_PERMISSIONS = new Set([
   // till's own sales must only ever reach the server via the offline-sync
   // order.create outbox path, never this direct online route.
   'orders.list', 'orders.read', 'orders.refund',
+  // Lets a till preview a promo code's discount amount live before the
+  // cashier applies it — deliberately just this one promotions.* permission,
+  // not list/create/update/deactivate, which stay admin-only.
+  'promotions.byCode',
 ]);
 
 // Device tokens are long-lived, so revocation is server-side: every request

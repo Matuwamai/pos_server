@@ -1,13 +1,19 @@
 import express from 'express';
 import promotionController from '../controllers/promotion.js';
-import authenticate from '../middlewares/authenticate.js';
+import { authenticateSyncClient } from '../middlewares/authenticateTerminal.js';
 import requirePermission from '../middlewares/requirePermission.js';
 import validate from '../middlewares/validate.js';
 import promotionValidation from '../validations/promotion.js';
 
 const router = express.Router();
 
-router.use(authenticate);
+// Dispatches to a tenant-user JWT or a device (terminal) token, same as
+// /sync/* and /orders/* — a till needs to preview a promo code's discount
+// live (GET /by-code/:code below) before applying it offline, but every
+// other route here stays admin-only: TERMINAL_PERMISSIONS only grants a
+// device token 'promotions.byCode', nothing else, so requirePermission
+// still 403s a device token on list/create/update/deactivate/reactivate.
+router.use(authenticateSyncClient);
 
 router.get('/', requirePermission('promotions.list'), validate(promotionValidation.list), promotionController.list);
 router.get('/by-code/:code', requirePermission('promotions.byCode'), validate(promotionValidation.byCodeParams), promotionController.getByCode);

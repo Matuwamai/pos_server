@@ -226,6 +226,18 @@ describe('offline sync', { skip }, () => {
     assert.match(res.body.results[0].result.error, /Only a manager/);
   });
 
+  test('a device token can preview a promo code live, but not list or manage promotions', async () => {
+    const promo = await call('POST', '/promotions', { token: owner, body: { name: 'Device Preview Promo', code: `DEVPREV${randomUUID().slice(0, 6).toUpperCase()}`, type: 'FIXED_AMOUNT', value: 1 } });
+    assert.equal(promo.status, 201, JSON.stringify(promo.body));
+
+    const preview = await call('GET', `/promotions/by-code/${promo.body.code}`, { token: device });
+    assert.equal(preview.status, 200, JSON.stringify(preview.body));
+    assert.equal(preview.body.code, promo.body.code);
+
+    assert.equal((await call('GET', '/promotions', { token: device })).status, 403);
+    assert.equal((await call('POST', '/promotions', { token: device, body: { name: 'x', type: 'FIXED_AMOUNT', value: 1 } })).status, 403);
+  });
+
   test('an oversell is accepted with a warning and the stock is reversed afterwards', async () => {
     const id = randomUUID();
     const big = saleFor(id, { quantity: 100000, total: 357500, lineTotal: 357500, payments: [{ method: 'CASH', amount: 357500 }] });
