@@ -1,16 +1,17 @@
 import prisma from '../config/prismaClient.js';
 import orderService from './order.js';
 import escapeHtml from '../utils/escapeHtml.js';
+import { getCurrencyDecimalDigits } from '../config/currencies.js';
 
-function money(amount) {
-  return Number(amount).toFixed(2);
+function money(amount, decimalDigits) {
+  return Number(amount).toFixed(decimalDigits);
 }
 
 function formatDateTime(date) {
   return new Date(date).toLocaleString('en-GB', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function itemLine(item) {
+function itemLine(item, decimalDigits) {
   const name = item.variant.product.name + (item.variant.sku ? ` (${item.variant.sku})` : '');
   const modifiersLine = item.modifiers.length
     ? `<div class="modifiers">${item.modifiers.map((m) => `+ ${escapeHtml(m.modifier.name)}`).join(', ')}</div>`
@@ -19,21 +20,25 @@ function itemLine(item) {
     <tr>
       <td>${escapeHtml(name)}${modifiersLine}</td>
       <td class="num">${Number(item.quantity)}</td>
-      <td class="num">${money(item.unitPrice)}</td>
-      <td class="num">${money(item.lineTotal)}</td>
+      <td class="num">${money(item.unitPrice, decimalDigits)}</td>
+      <td class="num">${money(item.lineTotal, decimalDigits)}</td>
     </tr>`;
 }
 
 // A simple, print-friendly (80mm thermal-style) receipt rendered straight
 // from the Order data that already exists — no separate Receipt model,
-// since a receipt is just a formatted view of a completed sale.
+// since a receipt is just a formatted view of a completed sale. Amounts are
+// plain decimal-places-aware numbers (no repeated currency code per line —
+// impractical at 320px) with the order's own currency code shown once,
+// under the receipt number.
 async function generateReceiptHtml(orderId) {
   const order = await orderService.getOrderById(orderId);
   const tenant = await prisma.tenant.findUnique({ where: { id: order.tenantId } });
+  const decimalDigits = getCurrencyDecimalDigits(order.currency);
 
-  const itemRows = order.items.map(itemLine).join('');
+  const itemRows = order.items.map((item) => itemLine(item, decimalDigits)).join('');
   const paymentRows = order.payments
-    .map((p) => `<tr><td>${escapeHtml(p.method)}</td><td class="num">${money(p.amount)}</td></tr>`)
+    .map((p) => `<tr><td>${escapeHtml(p.method)}</td><td class="num">${money(p.amount, decimalDigits)}</td></tr>`)
     .join('');
 
   return `<!doctype html>
@@ -63,7 +68,7 @@ async function generateReceiptHtml(orderId) {
   <div class="center muted">${escapeHtml(order.location.name)}</div>
   <div class="center muted">${formatDateTime(order.createdAt)}</div>
   <hr>
-  <div>Receipt #${order.orderNumber}</div>
+  <div>Receipt #${order.orderNumber} &middot; ${escapeHtml(order.currency)}</div>
   <div class="muted">Served by ${escapeHtml(order.user.name)}</div>
   ${order.customer ? `<div class="muted">Customer: ${escapeHtml(order.customer.name)}</div>` : ''}
   <hr>
@@ -73,10 +78,10 @@ async function generateReceiptHtml(orderId) {
   </table>
   <hr>
   <table class="totals">
-    <tr><td>Subtotal</td><td class="num">${money(order.subtotal)}</td></tr>
-    <tr><td>Discount</td><td class="num">-${money(order.discountTotal)}</td></tr>
-    <tr><td>Tax</td><td class="num">${money(order.taxTotal)}</td></tr>
-    <tr class="grand"><td>Total</td><td class="num">${money(order.total)}</td></tr>
+    <tr><td>Subtotal</td><td class="num">${money(order.subtotal, decimalDigits)}</td></tr>
+    <tr><td>Discount</td><td class="num">-${money(order.discountTotal, decimalDigits)}</td></tr>
+    <tr><td>Tax</td><td class="num">${money(order.taxTotal, decimalDigits)}</td></tr>
+    <tr class="grand"><td>Total</td><td class="num">${money(order.total, decimalDigits)}</td></tr>
   </table>
   <hr>
   <table>

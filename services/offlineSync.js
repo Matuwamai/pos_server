@@ -5,12 +5,13 @@ import inventoryService from './inventory.js';
 import salesSummaryService from './salesSummary.js';
 import auditLogService from './auditLog.js';
 import orderService from './order.js';
+import { getCurrencyDecimalDigits } from '../config/currencies.js';
+import { round } from '../utils/money.js';
 
 // The till prices and taxes a sale itself, offline. The server does not
 // reprice it: it checks the arithmetic is internally consistent, records the
 // terminal's snapshot, and flags anything that oversold stock.
 
-const round2 = (n) => Math.round(n * 100) / 100;
 const uuid = z.string().uuid();
 const money = z.coerce.number().nonnegative();
 
@@ -123,27 +124,31 @@ async function importOfflineOrder(tx, terminal, payload) {
     if (!session || session.locationId !== p.locationId) throw ApiError.badRequest('Cash drawer session not found at this location');
   }
 
+  const tenant = await tx.tenant.findUnique({ where: { id: terminal.tenantId }, select: { currency: true } });
+  const tenantCurrency = tenant.currency;
+  const decimalDigits = getCurrencyDecimalDigits(tenantCurrency);
+
   // Arithmetic must be internally consistent: every line, the totals, and
   // the payments. Anything else is a corrupted or tampered sale.
   let subtotal = 0;
   let taxTotal = 0;
   for (const item of p.items) {
-    const lineSubtotal = round2(item.unitPrice * item.quantity);
-    if (round2(lineSubtotal + item.taxAmount) !== round2(item.lineTotal)) {
+    const lineSubtotal = round(item.unitPrice * item.quantity, decimalDigits);
+    if (round(lineSubtotal + item.taxAmount, decimalDigits) !== round(item.lineTotal, decimalDigits)) {
       throw ApiError.badRequest(`Line total does not add up for variant ${item.variantId}`);
     }
     subtotal += lineSubtotal;
     taxTotal += item.taxAmount;
   }
-  subtotal = round2(subtotal);
-  taxTotal = round2(taxTotal);
-  const discountTotal = round2(p.discounts.reduce((sum, d) => sum + d.amount, 0));
-  if (subtotal !== round2(p.subtotal) || taxTotal !== round2(p.taxTotal) || discountTotal !== round2(p.discountTotal)) {
+  subtotal = round(subtotal, decimalDigits);
+  taxTotal = round(taxTotal, decimalDigits);
+  const discountTotal = round(p.discounts.reduce((sum, d) => sum + d.amount, 0), decimalDigits);
+  if (subtotal !== round(p.subtotal, decimalDigits) || taxTotal !== round(p.taxTotal, decimalDigits) || discountTotal !== round(p.discountTotal, decimalDigits)) {
     throw ApiError.badRequest('Sale subtotals do not match its lines');
   }
-  const total = round2(subtotal - discountTotal + taxTotal);
-  if (total !== round2(p.total)) throw ApiError.badRequest('Sale total does not match its lines');
-  const paid = round2(p.payments.reduce((sum, pay) => sum + pay.amount, 0));
+  const total = round(subtotal - discountTotal + taxTotal, decimalDigits);
+  if (total !== round(p.total, decimalDigits)) throw ApiError.badRequest('Sale total does not match its lines');
+  const paid = round(p.payments.reduce((sum, pay) => sum + pay.amount, 0), decimalDigits);
   if (paid < total) throw ApiError.badRequest(`Payments (${paid}) do not cover the sale total (${total})`);
 
   const warnings = [];
@@ -160,6 +165,7 @@ async function importOfflineOrder(tx, terminal, payload) {
       terminalReceiptNo: p.terminalReceiptNo,
       terminalCreatedAt: p.createdAt,
       status: 'COMPLETED',
+      currency: tenantCurrency,
       subtotal,
       discountTotal,
       taxTotal,
@@ -223,6 +229,8 @@ async function importOfflineOrder(tx, terminal, payload) {
       discountInput: d,
       subtotal,
       actingUser: cashier,
+      customerId: p.customerId,
+      decimalDigits,
     });
     await tx.orderDiscount.create({ data: { orderId: order.id, promotionId, appliedByUserId: cashier.id, amount, reason } });
     await auditLogService.recordAuditLog(tx, {
@@ -239,7 +247,7 @@ async function importOfflineOrder(tx, terminal, payload) {
     // uses, inside this same per-op transaction — the actual protection
     // against double-spending a card across two offline tills, since each
     // sync op reads the balance fresh right before deciding.
-    await orderService.createPaymentWithSideEffects(tx, { payment: pay, orderId: order.id, customerId: p.customerId });
+    await orderService.createPaymentWithSideEffects(tx, { payment: pay, orderId: order.id, customerId: p.customerId, tenantCurrency });
   }
 
   await orderService.earnLoyaltyPoints(tx, { customerId: p.customerId, orderId: order.id, total });

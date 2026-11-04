@@ -42,7 +42,7 @@ function verifyMfaToken(mfaToken) {
   return payload;
 }
 
-async function signup({ tenantName, subdomain, ownerName, ownerEmail, ownerPassword }) {
+async function signup({ tenantName, subdomain, currency, ownerName, ownerEmail, ownerPassword }) {
   const existing = await prisma.tenant.findUnique({ where: { subdomain } });
   if (existing) {
     throw ApiError.conflict('That subdomain is already taken');
@@ -52,7 +52,7 @@ async function signup({ tenantName, subdomain, ownerName, ownerEmail, ownerPassw
 
   const { tenant, owner } = await prisma.$transaction(async (tx) => {
     const tenant = await tx.tenant.create({
-      data: { name: tenantName, subdomain, plan: 'trial' },
+      data: { name: tenantName, subdomain, currency, plan: 'trial' },
     });
 
     await tx.location.create({

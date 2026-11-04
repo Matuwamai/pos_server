@@ -1,9 +1,10 @@
 import prisma from '../config/prismaClient.js';
 import invoiceService from './invoice.js';
 import escapeHtml from '../utils/escapeHtml.js';
+import { getCurrencyDecimalDigits } from '../config/currencies.js';
 
-function money(amount) {
-  return Number(amount).toFixed(2);
+function money(amount, decimalDigits) {
+  return Number(amount).toFixed(decimalDigits);
 }
 
 function formatDate(date) {
@@ -13,6 +14,7 @@ function formatDate(date) {
 async function generateInvoiceHtml(invoiceId) {
   const invoice = await invoiceService.getInvoiceById(invoiceId);
   const tenant = await prisma.tenant.findUnique({ where: { id: invoice.tenantId } });
+  const decimalDigits = getCurrencyDecimalDigits(invoice.currency);
 
   const itemRows = invoice.items
     .map(
@@ -20,20 +22,20 @@ async function generateInvoiceHtml(invoiceId) {
         <tr>
           <td>${escapeHtml(item.description)}</td>
           <td class="num">${Number(item.quantity)}</td>
-          <td class="num">${money(item.unitPrice)}</td>
-          <td class="num">${money(item.taxAmount)}</td>
-          <td class="num">${money(item.lineTotal)}</td>
+          <td class="num">${money(item.unitPrice, decimalDigits)}</td>
+          <td class="num">${money(item.taxAmount, decimalDigits)}</td>
+          <td class="num">${money(item.lineTotal, decimalDigits)}</td>
         </tr>`
     )
     .join('');
 
   const paymentRows = invoice.payments
     .map(
-      (p) => `<tr><td>${formatDate(p.createdAt)}</td><td>${escapeHtml(p.method)}</td><td class="num">${money(p.amount)}</td></tr>`
+      (p) => `<tr><td>${formatDate(p.createdAt)}</td><td>${escapeHtml(p.method)}</td><td class="num">${money(p.amount, decimalDigits)}</td></tr>`
     )
     .join('');
 
-  const balanceDue = money(Number(invoice.total) - Number(invoice.amountPaid));
+  const balanceDue = money(Number(invoice.total) - Number(invoice.amountPaid), decimalDigits);
 
   return `<!doctype html>
 <html>
@@ -69,7 +71,7 @@ async function generateInvoiceHtml(invoiceId) {
     </div>
     <div style="text-align:right">
       <h1>INVOICE</h1>
-      <div class="muted">#${invoice.invoiceNumber}</div>
+      <div class="muted">#${invoice.invoiceNumber} &middot; ${escapeHtml(invoice.currency)}</div>
       <span class="status status-${invoice.status}">${invoice.status.replace('_', ' ')}</span>
     </div>
   </div>
@@ -94,11 +96,11 @@ async function generateInvoiceHtml(invoiceId) {
   </table>
 
   <table class="totals">
-    <tr><td>Subtotal</td><td class="num">${money(invoice.subtotal)}</td></tr>
-    <tr><td>Discount</td><td class="num">-${money(invoice.discountTotal)}</td></tr>
-    <tr><td>Tax</td><td class="num">${money(invoice.taxTotal)}</td></tr>
-    <tr class="grand"><td>Total</td><td class="num">${money(invoice.total)}</td></tr>
-    <tr><td>Amount paid</td><td class="num">${money(invoice.amountPaid)}</td></tr>
+    <tr><td>Subtotal</td><td class="num">${money(invoice.subtotal, decimalDigits)}</td></tr>
+    <tr><td>Discount</td><td class="num">-${money(invoice.discountTotal, decimalDigits)}</td></tr>
+    <tr><td>Tax</td><td class="num">${money(invoice.taxTotal, decimalDigits)}</td></tr>
+    <tr class="grand"><td>Total</td><td class="num">${money(invoice.total, decimalDigits)}</td></tr>
+    <tr><td>Amount paid</td><td class="num">${money(invoice.amountPaid, decimalDigits)}</td></tr>
     <tr class="grand"><td>Balance due</td><td class="num">${balanceDue}</td></tr>
   </table>
 

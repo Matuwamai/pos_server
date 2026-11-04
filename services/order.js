@@ -12,6 +12,9 @@ import giftCardService from './giftCard.js';
 import auditLogService from './auditLog.js';
 import salesSummaryService from './salesSummary.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
+import { getTenantId } from '../config/tenantContext.js';
+import { getCurrencyDecimalDigits } from '../config/currencies.js';
+import { round } from '../utils/money.js';
 
 // Scope note: orders are built client-side (a till app manages its own cart)
 // and submitted here as one finished sale — there's no server-side OPEN
@@ -36,8 +39,9 @@ const orderInclude = {
   refunds: { include: { items: true } },
 };
 
-function round2(n) {
-  return Math.round(n * 100) / 100;
+async function getCurrentTenantCurrency(tx) {
+  const tenant = await tx.tenant.findUnique({ where: { id: getTenantId() }, select: { currency: true } });
+  return tenant.currency;
 }
 
 async function resolveDefaultTaxRate() {
@@ -52,7 +56,7 @@ async function resolveDefaultTaxRate() {
 // Modifiers must belong to a ModifierGroup actually attached to the
 // product being sold — otherwise any modifier from any product could be
 // tacked onto any sale.
-async function priceAndValidateItem(tx, { variantId, quantity, modifierIds }, defaultTaxRate) {
+async function priceAndValidateItem(tx, { variantId, quantity, modifierIds }, defaultTaxRate, decimalDigits) {
   const variant = await tx.productVariant.findUnique({ where: { id: variantId }, include: { product: true, taxRate: true } });
   if (!variant) throw ApiError.notFound(`Variant ${variantId} not found`);
   if (!variant.isActive) throw ApiError.conflict(`Variant ${variant.sku} is not active`);
@@ -72,10 +76,10 @@ async function priceAndValidateItem(tx, { variantId, quantity, modifierIds }, de
   }
 
   const unitPrice = Number(variant.price);
-  const lineSubtotal = round2((unitPrice + modifiersTotal) * quantity);
+  const lineSubtotal = round((unitPrice + modifiersTotal) * quantity, decimalDigits);
   const effectiveTaxRate = variant.taxRate || defaultTaxRate;
-  const taxAmount = effectiveTaxRate ? round2(lineSubtotal * Number(effectiveTaxRate.rate)) : 0;
-  const lineTotal = round2(lineSubtotal + taxAmount);
+  const taxAmount = effectiveTaxRate ? round(lineSubtotal * Number(effectiveTaxRate.rate), decimalDigits) : 0;
+  const lineTotal = round(lineSubtotal + taxAmount, decimalDigits);
 
   return { variant, quantity, unitPrice, lineSubtotal, taxAmount, lineTotal, modifierRows };
 }
@@ -146,7 +150,7 @@ async function restockInventoryForRefund(tx, { variant, quantity, locationId, re
 // pricing/validation only, not the DB write, since the two call sites write
 // discount rows slightly differently (bulk createMany with a grouped audit
 // log vs. one row at a time with a per-row audit log).
-async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser, customerId }) {
+async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser, customerId, decimalDigits }) {
   let promotionId = null;
   let amount = discountInput.amount;
 
@@ -157,7 +161,7 @@ async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser, c
     }
     promotionId = promotion.id;
     if (amount === undefined) {
-      if (promotion.type === 'PERCENTAGE') amount = round2(subtotal * (Number(promotion.value) / 100));
+      if (promotion.type === 'PERCENTAGE') amount = round(subtotal * (Number(promotion.value) / 100), decimalDigits);
       else if (promotion.type === 'FIXED_AMOUNT') amount = Number(promotion.value);
       else throw ApiError.badRequest('A BOGO promotion requires an explicit discount amount');
     }
@@ -179,7 +183,7 @@ async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser, c
     if (points > balance) {
       throw ApiError.conflict(`Insufficient points: only ${balance} available`);
     }
-    amount = round2(points * Number(program.redemptionRate));
+    amount = round(points * Number(program.redemptionRate), decimalDigits);
     return { promotionId: null, amount, reason: `Redeemed ${points} loyalty points`, loyaltyPointsRedeemed: points };
   } else if (!['OWNER', 'MANAGER'].includes(actingUser.role)) {
     // A promo-code/points discount is driven by something anyone can
@@ -194,7 +198,14 @@ async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser, c
 // Creates the Payment row and, for STORE_CREDIT/GIFT_CARD, the matching
 // balance check + decrement — all inside the caller's transaction so the
 // balance read and the decrement can never race across two sales.
-async function createPaymentWithSideEffects(tx, { payment, orderId, customerId }) {
+async function createPaymentWithSideEffects(tx, { payment, orderId, customerId, tenantCurrency }) {
+  // M-Pesa fundamentally only operates in Kenyan Shillings — every client
+  // already hides the option unless the tenant's currency is KES, this is
+  // the server-side backstop against a stale/tampered client doing it anyway.
+  if (payment.method === 'MPESA' && tenantCurrency !== 'KES') {
+    throw ApiError.badRequest('M-Pesa is only available for businesses whose currency is KES');
+  }
+
   await tx.payment.create({
     data: { orderId, method: payment.method, amount: payment.amount, status: 'CAPTURED', transactionRef: payment.transactionRef },
   });
@@ -259,13 +270,16 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
   const defaultTaxRate = await resolveDefaultTaxRate();
 
   const orderId = await prisma.$transaction(async (tx) => {
+    const tenantCurrency = await getCurrentTenantCurrency(tx);
+    const decimalDigits = getCurrencyDecimalDigits(tenantCurrency);
+
     const pricedItems = [];
     for (const itemInput of items) {
-      pricedItems.push(await priceAndValidateItem(tx, itemInput, defaultTaxRate));
+      pricedItems.push(await priceAndValidateItem(tx, itemInput, defaultTaxRate, decimalDigits));
     }
 
-    const subtotal = round2(pricedItems.reduce((sum, i) => sum + i.lineSubtotal, 0));
-    const taxTotal = round2(pricedItems.reduce((sum, i) => sum + i.taxAmount, 0));
+    const subtotal = round(pricedItems.reduce((sum, i) => sum + i.lineSubtotal, 0), decimalDigits);
+    const taxTotal = round(pricedItems.reduce((sum, i) => sum + i.taxAmount, 0), decimalDigits);
 
     let discountTotal = 0;
     const discountRows = [];
@@ -275,20 +289,21 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
         subtotal,
         actingUser,
         customerId,
+        decimalDigits,
       });
       discountTotal += amount;
       discountRows.push({ promotionId, appliedByUserId: actingUser.id, amount, reason, loyaltyPointsRedeemed });
     }
-    discountTotal = round2(discountTotal);
+    discountTotal = round(discountTotal, decimalDigits);
 
-    const total = round2(subtotal - discountTotal + taxTotal);
+    const total = round(subtotal - discountTotal + taxTotal, decimalDigits);
     if (total < 0) {
       throw ApiError.badRequest('Discounts cannot exceed the order subtotal plus tax');
     }
 
     // Cash can overtender for change; other methods aren't checked against
     // overpayment here to avoid rejecting reasonable rounding.
-    const paymentsTotal = round2(payments.reduce((sum, p) => sum + p.amount, 0));
+    const paymentsTotal = round(payments.reduce((sum, p) => sum + p.amount, 0), decimalDigits);
     if (paymentsTotal < total) {
       throw ApiError.badRequest(`Payments (${paymentsTotal}) do not cover the order total (${total})`);
     }
@@ -302,6 +317,7 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
         customerId,
         channel: channel || 'POS',
         status: 'COMPLETED',
+        currency: tenantCurrency,
         subtotal,
         discountTotal,
         taxTotal,
@@ -354,7 +370,7 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
     }
 
     for (const payment of payments) {
-      await createPaymentWithSideEffects(tx, { payment, orderId: order.id, customerId });
+      await createPaymentWithSideEffects(tx, { payment, orderId: order.id, customerId, tenantCurrency });
     }
 
     await earnLoyaltyPoints(tx, { customerId, orderId: order.id, total });
@@ -436,7 +452,9 @@ async function refundOrder(id, actingUser, { items, reason, refundMethod, giftCa
       validated.push({ orderItemId, quantity, amount, variant });
       totalAmount += amount;
     }
-    totalAmount = round2(totalAmount);
+    // Uses the order's own currency snapshot, not the tenant's current one
+    // — correct even if currency-changing is ever allowed later.
+    totalAmount = round(totalAmount, getCurrencyDecimalDigits(order.currency));
 
     const refund = await tx.refund.create({ data: { orderId: order.id, processedByUserId: actingUser.id, reason, totalAmount } });
 

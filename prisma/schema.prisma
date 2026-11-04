@@ -39,6 +39,7 @@ model Tenant {
   name                String
   subdomain           String                   @unique
   plan                String                   @default("trial")
+  currency            String                   @default("USD") @db.VarChar(3) // ISO 4217 — set once at signup, immutable after (see config/currencies.js)
   status              TenantStatus             @default(ACTIVE)
   logoUrl             String? // path under /uploads, served statically — see services/tenantSelf.js
   mpesaType           MpesaShortcodeType?      // null until the tenant sets up M-Pesa
@@ -827,6 +828,7 @@ model Order {
   terminalReceiptNo   String? // terminal-local receipt number, e.g. T1-20260925-0042
   terminalCreatedAt   DateTime? // when the terminal rang the sale up (can be long before it synced)
   status              OrderStatus  @default(OPEN)
+  currency            String       @default("USD") @db.VarChar(3) // snapshot of tenant.currency at creation — stays correct even if a tenant's currency is ever changed later
   subtotal            Decimal      @db.Decimal(10, 2)
   discountTotal       Decimal      @default(0) @db.Decimal(10, 2)
   taxTotal            Decimal      @db.Decimal(10, 2)
@@ -1332,6 +1334,7 @@ model Invoice {
   status        InvoiceStatus @default(DRAFT)
   issueDate     DateTime      @default(now())
   dueDate       DateTime
+  currency      String        @default("USD") @db.VarChar(3) // snapshot of tenant.currency at creation, same reasoning as Order.currency
   subtotal      Decimal       @db.Decimal(10, 2)
   discountTotal Decimal       @default(0) @db.Decimal(10, 2)
   taxTotal      Decimal       @db.Decimal(10, 2)

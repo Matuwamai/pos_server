@@ -22,6 +22,7 @@ const SELF_FIELDS = {
   id: true,
   name: true,
   subdomain: true,
+  currency: true,
   logoUrl: true,
   mpesaType: true,
   mpesaShortcode: true,
@@ -77,6 +78,16 @@ async function removeTenantLogo(tenantId) {
 // is independent of whether STK push (below) is also configured — manual
 // entry always works as the fallback.
 async function updateTenantPayments(tenantId, { mpesaType, mpesaShortcode }) {
+  // M-Pesa only operates in KES — reject configuring a shortcode for any
+  // other tenant currency rather than letting it sit there unusable
+  // (createPaymentWithSideEffects/mpesaPaymentIntent.createIntent both
+  // reject the actual payment anyway, so this just avoids dead config).
+  if (mpesaShortcode) {
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { currency: true } });
+    if (tenant.currency !== 'KES') {
+      throw ApiError.badRequest('M-Pesa is only available for businesses whose currency is KES');
+    }
+  }
   return present(await prisma.tenant.update({ where: { id: tenantId }, data: { mpesaType, mpesaShortcode }, select: SELF_FIELDS }));
 }
 

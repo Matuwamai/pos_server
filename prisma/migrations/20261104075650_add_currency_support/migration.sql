@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE `Invoice` ADD COLUMN `currency` VARCHAR(3) NOT NULL DEFAULT 'USD';
+
+-- AlterTable
+ALTER TABLE `Order` ADD COLUMN `currency` VARCHAR(3) NOT NULL DEFAULT 'USD';
+
+-- AlterTable
+ALTER TABLE `Tenant` ADD COLUMN `currency` VARCHAR(3) NOT NULL DEFAULT 'USD';

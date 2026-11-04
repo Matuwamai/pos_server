@@ -21,7 +21,15 @@ const MIN_POLL_INTERVAL_MS = 4000;
 // then submits to the existing, untouched POST /orders exactly as manual
 // M-Pesa entry already does. createOrder never needs to know STK push exists.
 async function createIntent(tenantId, { amount, phoneNumber, terminalId, locationId, initiatedByUserId }) {
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, mpesaType: true, mpesaShortcode: true } });
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { name: true, currency: true, mpesaType: true, mpesaShortcode: true },
+  });
+  // M-Pesa only operates in Kenyan Shillings — a stale client could still
+  // try to send an STK prompt for a non-KES tenant if the credential/
+  // shortcode happen to be configured anyway, so this is checked
+  // server-side regardless of what the client shows/hides.
+  if (tenant.currency !== 'KES') throw ApiError.badRequest('M-Pesa is only available for businesses whose currency is KES');
   if (!tenant?.mpesaShortcode) throw ApiError.badRequest("This business hasn't set up a till/paybill number yet");
 
   const credential = await mpesaCredentialService.getDecryptedCredential(tenantId); // throws badRequest if absent

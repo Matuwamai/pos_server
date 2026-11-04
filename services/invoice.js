@@ -3,6 +3,9 @@ import ApiError from '../utils/ApiError.js';
 import customerService from './customer.js';
 import locationService from './location.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
+import { getTenantId } from '../config/tenantContext.js';
+import { getCurrencyDecimalDigits } from '../config/currencies.js';
+import { round } from '../utils/money.js';
 
 const invoiceInclude = {
   customer: { select: { id: true, name: true, email: true, phone: true } },
@@ -12,19 +15,15 @@ const invoiceInclude = {
   payments: { orderBy: { createdAt: 'asc' } },
 };
 
-function round2(n) {
-  return Math.round(n * 100) / 100;
-}
-
-function priceItem({ description, quantity, unitPrice, taxAmount }) {
-  const lineTotal = round2(quantity * unitPrice + (taxAmount || 0));
+function priceItem({ description, quantity, unitPrice, taxAmount }, decimalDigits) {
+  const lineTotal = round(quantity * unitPrice + (taxAmount || 0), decimalDigits);
   return { description, quantity, unitPrice, taxAmount: taxAmount || 0, lineTotal };
 }
 
-function computeTotals(pricedItems, discountTotal) {
-  const subtotal = round2(pricedItems.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0));
-  const taxTotal = round2(pricedItems.reduce((sum, i) => sum + i.taxAmount, 0));
-  const total = round2(subtotal - discountTotal + taxTotal);
+function computeTotals(pricedItems, discountTotal, decimalDigits) {
+  const subtotal = round(pricedItems.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0), decimalDigits);
+  const taxTotal = round(pricedItems.reduce((sum, i) => sum + i.taxAmount, 0), decimalDigits);
+  const total = round(subtotal - discountTotal + taxTotal, decimalDigits);
   if (total < 0) {
     throw ApiError.badRequest('Discount cannot exceed the invoice subtotal plus tax');
   }
@@ -51,8 +50,11 @@ async function createInvoice(actingUser, { customerId, orderId, locationId, dueD
   }
   await validateItemVariants(items);
 
-  const pricedItems = items.map(priceItem);
-  const { subtotal, taxTotal, total } = computeTotals(pricedItems, discountTotal);
+  const tenant = await prisma.tenant.findUnique({ where: { id: getTenantId() }, select: { currency: true } });
+  const decimalDigits = getCurrencyDecimalDigits(tenant.currency);
+
+  const pricedItems = items.map((item) => priceItem(item, decimalDigits));
+  const { subtotal, taxTotal, total } = computeTotals(pricedItems, discountTotal, decimalDigits);
 
   const invoice = await prisma.$transaction(async (tx) => {
     const created = await tx.invoice.create({
@@ -62,6 +64,7 @@ async function createInvoice(actingUser, { customerId, orderId, locationId, dueD
         locationId,
         createdById: actingUser.id,
         dueDate,
+        currency: tenant.currency,
         discountTotal,
         notes,
         subtotal,
@@ -121,12 +124,15 @@ async function updateInvoice(id, updates) {
 
   const { items, discountTotal, ...rest } = updates;
   const effectiveDiscountTotal = discountTotal !== undefined ? discountTotal : Number(invoice.discountTotal);
+  // Uses the invoice's own currency snapshot, not the tenant's current one
+  // — correct even if currency-changing is ever allowed later.
+  const decimalDigits = getCurrencyDecimalDigits(invoice.currency);
 
   return prisma.$transaction(async (tx) => {
     if (items) {
       await validateItemVariants(items);
-      const pricedItems = items.map(priceItem);
-      const { subtotal, taxTotal, total } = computeTotals(pricedItems, effectiveDiscountTotal);
+      const pricedItems = items.map((item) => priceItem(item, decimalDigits));
+      const { subtotal, taxTotal, total } = computeTotals(pricedItems, effectiveDiscountTotal, decimalDigits);
 
       await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
       await tx.invoiceItem.createMany({ data: pricedItems.map((item) => ({ invoiceId: id, ...item })) });
@@ -142,7 +148,8 @@ async function updateInvoice(id, updates) {
       const currentItems = await tx.invoiceItem.findMany({ where: { invoiceId: id } });
       const { subtotal, taxTotal, total } = computeTotals(
         currentItems.map((i) => ({ quantity: Number(i.quantity), unitPrice: Number(i.unitPrice), taxAmount: Number(i.taxAmount) })),
-        discountTotal
+        discountTotal,
+        decimalDigits
       );
       return tx.invoice.update({ where: { id }, data: { ...rest, discountTotal, subtotal, taxTotal, total }, include: invoiceInclude });
     }
@@ -165,7 +172,8 @@ async function recordPayment(actingUser, id, { method, amount, reference }) {
     throw ApiError.conflict('Payments can only be recorded against an issued, unpaid invoice');
   }
 
-  const balanceDue = round2(Number(invoice.total) - Number(invoice.amountPaid));
+  const decimalDigits = getCurrencyDecimalDigits(invoice.currency);
+  const balanceDue = round(Number(invoice.total) - Number(invoice.amountPaid), decimalDigits);
   if (amount > balanceDue) {
     throw ApiError.badRequest(`Payment (${amount}) exceeds the outstanding balance (${balanceDue})`);
   }
@@ -173,7 +181,7 @@ async function recordPayment(actingUser, id, { method, amount, reference }) {
   return prisma.$transaction(async (tx) => {
     await tx.invoicePayment.create({ data: { invoiceId: id, method, amount, reference, recordedById: actingUser.id } });
 
-    const amountPaid = round2(Number(invoice.amountPaid) + amount);
+    const amountPaid = round(Number(invoice.amountPaid) + amount, decimalDigits);
     const status = amountPaid >= Number(invoice.total) ? 'PAID' : 'PARTIALLY_PAID';
 
     return tx.invoice.update({ where: { id }, data: { amountPaid, status }, include: invoiceInclude });
