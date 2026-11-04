@@ -10,15 +10,17 @@ const itemInput = z.object({
 });
 
 // Either an existing promo code (amount auto-computed from it, unless
-// explicitly overridden) or a manual amount+reason with no code at all.
+// explicitly overridden), a loyalty-points redemption (amount computed from
+// the program's redemptionRate), or a manual amount+reason with neither.
 const discountInput = z
   .object({
     promotionCode: z.string().optional(),
     amount: z.coerce.number().positive().optional(),
     reason: z.string().max(255).optional(),
+    loyaltyPointsRedeemed: z.coerce.number().int().positive().optional(),
   })
-  .refine((d) => d.promotionCode || d.amount !== undefined, {
-    message: 'Either promotionCode or amount must be provided',
+  .refine((d) => d.promotionCode || d.amount !== undefined || d.loyaltyPointsRedeemed !== undefined, {
+    message: 'Either promotionCode, amount, or loyaltyPointsRedeemed must be provided',
   });
 
 const paymentInput = z

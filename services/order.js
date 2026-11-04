@@ -146,7 +146,7 @@ async function restockInventoryForRefund(tx, { variant, quantity, locationId, re
 // pricing/validation only, not the DB write, since the two call sites write
 // discount rows slightly differently (bulk createMany with a grouped audit
 // log vs. one row at a time with a per-row audit log).
-async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser }) {
+async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser, customerId }) {
   let promotionId = null;
   let amount = discountInput.amount;
 
@@ -161,9 +161,30 @@ async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser })
       else if (promotion.type === 'FIXED_AMOUNT') amount = Number(promotion.value);
       else throw ApiError.badRequest('A BOGO promotion requires an explicit discount amount');
     }
+  } else if (discountInput.loyaltyPointsRedeemed) {
+    // Redeeming points for a dollar-off is a discount, not a tender —
+    // PaymentMethod has no points option, and this avoids a migration. The
+    // balance check below runs inside the caller's transaction (same as
+    // loyaltyTransactionService.redeemPoints, just inlined here) so it
+    // stays atomic with the rest of order creation; the actual ledger row
+    // is written by the caller once order.id exists (see createOrder).
+    if (!customerId) throw ApiError.badRequest('A customer is required to redeem loyalty points');
+    const program = await tx.loyaltyProgram.findFirst();
+    if (!program || !program.isActive) {
+      throw ApiError.conflict('The loyalty program is not currently active');
+    }
+    const points = discountInput.loyaltyPointsRedeemed;
+    const result = await tx.loyaltyTransaction.aggregate({ where: { customerId }, _sum: { points: true } });
+    const balance = result._sum.points ?? 0;
+    if (points > balance) {
+      throw ApiError.conflict(`Insufficient points: only ${balance} available`);
+    }
+    amount = round2(points * Number(program.redemptionRate));
+    return { promotionId: null, amount, reason: `Redeemed ${points} loyalty points`, loyaltyPointsRedeemed: points };
   } else if (!['OWNER', 'MANAGER'].includes(actingUser.role)) {
-    // A promo-code discount is driven by a code anyone can enter; a
-    // discount with no code is pure staff discretion, so it's gated.
+    // A promo-code/points discount is driven by something anyone can
+    // enter; a discount with neither is pure staff discretion, so it's
+    // gated.
     throw ApiError.forbidden('Only a manager can apply a manual discount');
   }
 
@@ -249,9 +270,14 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
     let discountTotal = 0;
     const discountRows = [];
     for (const discountInput of discounts || []) {
-      const { promotionId, amount, reason } = await resolveDiscountInput(tx, { discountInput, subtotal, actingUser });
+      const { promotionId, amount, reason, loyaltyPointsRedeemed } = await resolveDiscountInput(tx, {
+        discountInput,
+        subtotal,
+        actingUser,
+        customerId,
+      });
       discountTotal += amount;
-      discountRows.push({ promotionId, appliedByUserId: actingUser.id, amount, reason });
+      discountRows.push({ promotionId, appliedByUserId: actingUser.id, amount, reason, loyaltyPointsRedeemed });
     }
     discountTotal = round2(discountTotal);
 
@@ -307,9 +333,15 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
     }
 
     if (discountRows.length > 0) {
-      await tx.orderDiscount.createMany({ data: discountRows.map((d) => ({ orderId: order.id, ...d })) });
+      await tx.orderDiscount.createMany({
+        data: discountRows.map(({ loyaltyPointsRedeemed, ...d }) => ({ orderId: order.id, ...d })),
+      });
       for (const d of discountRows) {
-        if (!d.promotionId) {
+        if (d.loyaltyPointsRedeemed) {
+          await tx.loyaltyTransaction.create({
+            data: { customerId, orderId: order.id, type: 'REDEEM', points: -d.loyaltyPointsRedeemed },
+          });
+        } else if (!d.promotionId) {
           await auditLogService.recordAuditLog(tx, {
             userId: actingUser.id,
             action: 'order.discount.manual',
