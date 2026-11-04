@@ -69,7 +69,15 @@ async function pullChanges({ since, locationId, limit = DEFAULT_LIMIT }) {
   // re-downloading by comparing updatedAt against what it already cached.
   const tenant = await prisma.tenant.findUnique({
     where: { id: location.tenantId },
-    select: { name: true, logoUrl: true, mpesaType: true, mpesaShortcode: true, updatedAt: true, mpesaCredential: { select: { id: true } } },
+    select: {
+      name: true,
+      currency: true,
+      logoUrl: true,
+      mpesaType: true,
+      mpesaShortcode: true,
+      updatedAt: true,
+      mpesaCredential: { select: { id: true } },
+    },
   });
   if (tenant) {
     const { mpesaCredential, ...tenantFields } = tenant;
