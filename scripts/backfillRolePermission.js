@@ -1,12 +1,4 @@
 import prisma from '../config/prismaClient.js';
-
-// Granting a new permission code (via config/permissions.js + seedPermissions.js) only
-// adds it to the global catalog — tenants created before that point already have their
-// system roles' RolePermission rows fixed in the DB, so they never pick it up on their
-// own. Run this once per new permission to backfill it onto every tenant's existing
-// system roles (seedDefaultRolesForTenant handles new tenants going forward). Idempotent.
-//
-// Usage: node scripts/backfillRolePermission.js <permission.code> <ROLE_NAME> [ROLE_NAME...]
 async function main() {
   const [code, ...roleNames] = process.argv.slice(2);
   if (!code || roleNames.length === 0) {

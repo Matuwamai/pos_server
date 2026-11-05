@@ -1,10 +1,6 @@
 import prisma from '../config/prismaClient.js';
 import PERMISSIONS from '../config/permissions.js';
 
-// Idempotent — safe to re-run any time the catalog in config/permissions.js
-// gains new entries (e.g. after adding a new resource/route). Never removes
-// a code that's no longer listed, since existing RolePermission/
-// ApiKeyPermission rows may still reference it.
 async function main() {
   console.log(`Seeding ${PERMISSIONS.length} permissions...`);
 

@@ -1,13 +1,6 @@
 import prisma from '../config/prismaClient.js';
 import roleService from '../services/role.js';
 import { runWithTenant } from '../config/tenantContext.js';
-
-// One-time migration helper for tenants that existed before the Role/
-// Permission system: ensures every tenant has the 5 default roles, then
-// assigns each of its existing users (that don't already have one) to the
-// role matching their legacy enum value by name. Safe to re-run — skips
-// tenants that already have roles, and only touches users with a null
-// assignedRoleId.
 async function main() {
   const tenants = await prisma.tenant.findMany({ select: { id: true, subdomain: true } });
   console.log(`Checking ${tenants.length} tenant(s)...`);

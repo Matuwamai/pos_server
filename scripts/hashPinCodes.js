@@ -1,8 +1,5 @@
 import bcrypt from 'bcryptjs';
 import prisma from '../config/prismaClient.js';
-
-// One-off migration: PINs used to be stored in plaintext. Any value that is
-// not already a bcrypt hash is hashed in place. Safe to re-run.
 const BCRYPT_PREFIX = /^\$2[aby]\$/;
 
 async function main() {
