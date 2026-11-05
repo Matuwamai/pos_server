@@ -1,17 +1,3 @@
-// MULTI-TENANT POS — FULL PRISMA SCHEMA (MySQL)
-// =============================================================================
-// Tenancy model: shared database, row-level isolation via tenantId on every
-// tenant-scoped table. All primary keys are UUID strings (not auto-increment)
-// so offline terminals can generate valid, collision-free IDs before ever
-// talking to the server.
-//
-// Catalog design: variant-centric (Shopify/Square style). Every sellable
-// Product has at least one ProductVariant — even "simple" products get a
-// single default variant. This means InventoryItem, OrderItem, and recipes
-// (ProductComponent) all key off variantId consistently, with no nullable
-// variant fields scattered around the schema.
-// =============================================================================
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -30,20 +16,16 @@ model SuperAdmin {
   createdAt    DateTime @default(now())
 }
 
-// ---------------------------------------------------------------------------
-// TENANCY & BILLING
-// ---------------------------------------------------------------------------
-
 model Tenant {
   id                  String                   @id @default(uuid())
   name                String
   subdomain           String                   @unique
   plan                String                   @default("trial")
-  currency            String                   @default("USD") @db.VarChar(3) // ISO 4217 — set once at signup, immutable after (see config/currencies.js)
+  currency            String                   @default("USD") @db.VarChar(3)
   status              TenantStatus             @default(ACTIVE)
-  logoUrl             String? // path under /uploads, served statically — see services/tenantSelf.js
-  mpesaType           MpesaShortcodeType?      // null until the tenant sets up M-Pesa
-  mpesaShortcode      String? // the till (Buy Goods) or paybill number customers pay into
+  logoUrl             String?
+  mpesaType           MpesaShortcodeType?
+  mpesaShortcode      String?
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
   subscription        Subscription?
@@ -86,12 +68,6 @@ model Tenant {
   @@index([status])
 }
 
-// Per-tenant Daraja API app — each tenant goes live on their own M-Pesa
-// till/paybill (Tenant.mpesaShortcode) using their own consumer key/secret/
-// passkey, never a shared/platform account. Secrets are encrypted at rest
-// (utils/encryption.js) and never returned by any API response — only
-// whether a credential exists (see services/tenantSelf.js's
-// `mpesaStkConfigured`) is ever exposed.
 model MpesaCredential {
   id                   String           @id @default(uuid())
   tenantId             String           @unique
@@ -110,10 +86,6 @@ enum MpesaEnvironment {
   PRODUCTION
 }
 
-// One STK Push attempt. Short-lived by design (`expiresAt`) — this is a
-// pre-step that resolves to a `transactionRef` before the client ever calls
-// `POST /orders`; it's never itself the record of a sale (see
-// services/mpesaPaymentIntent.js's doc comment for the full reasoning).
 model MpesaPaymentIntent {
   id                 String                   @id @default(uuid())
   tenantId           String
@@ -129,10 +101,6 @@ model MpesaPaymentIntent {
   resultDesc         String?
   mpesaReceiptNumber String?
   expiresAt          DateTime
-  // Throttles live Daraja stkpushquery calls independently of how often a
-  // client polls GET /payment-intents/:id — Safaricom's sandbox enforces a
-  // tight rate limit (observed: a burst of ~3 requests/minute), confirmed
-  // live while building this (see services/mpesaPaymentIntent.js).
   lastPolledAt       DateTime?
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
@@ -151,26 +119,20 @@ enum MpesaPaymentIntentStatus {
   TIMEOUT
 }
 
-// Billing for the tenant's own subscription to YOUR platform (not their
-// customers' payments — that's the Payment model further down).
 model Subscription {
   id                 String    @id @default(uuid())
   tenantId           String    @unique
-  planCode           String // e.g. "starter", "pro", "enterprise"
-  billingProvider    String // "stripe", "paddle", etc.
+  planCode           String
+  billingProvider    String
   externalCustomerId String?
   externalSubId      String?
-  status             String    @default("trialing") // trialing | active | past_due | cancelled
+  status             String    @default("trialing")
   currentPeriodEnd   DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 }
-
-// ---------------------------------------------------------------------------
-// LOCATIONS & DEVICES
-// ---------------------------------------------------------------------------
 
 model Location {
   id        String   @id @default(uuid())
@@ -198,17 +160,14 @@ model Location {
   @@index([tenantId])
 }
 
-// A registered physical/virtual register (web terminal, tablet, desktop
-// install). Tracking this gives you provenance on every order for debugging
-// offline sync issues, and a hook for remote device management later.
 model Terminal {
   id               String    @id @default(uuid())
   tenantId         String
   locationId       String
   name             String
-  deviceIdentifier String    @unique // hardware/app-instance fingerprint
-  platform         String? // "web" | "desktop" | "mobile"
-  tokenVersion     Int       @default(0) // bumped to revoke the device token issued by /terminals/:id/enroll-device
+  deviceIdentifier String    @unique
+  platform         String?
+  tokenVersion     Int       @default(0)
   lastSeenAt       DateTime?
   isActive         Boolean   @default(true)
   updatedAt        DateTime  @default(now()) @updatedAt
@@ -224,7 +183,6 @@ model Terminal {
   @@index([tenantId])
 }
 
-// Till open/close reconciliation — foundation for X-reports and Z-reports.
 model CashDrawerSession {
   id             String           @id @default(uuid())
   tenantId       String
@@ -234,7 +192,7 @@ model CashDrawerSession {
   openingFloat   Decimal          @db.Decimal(10, 2)
   closingCash    Decimal?         @db.Decimal(10, 2)
   expectedCash   Decimal?         @db.Decimal(10, 2)
-  difference     Decimal?         @db.Decimal(10, 2) // closingCash - expectedCash
+  difference     Decimal?         @db.Decimal(10, 2)
   status         CashDrawerStatus @default(OPEN)
   openedAt       DateTime         @default(now())
   closedAt       DateTime?
@@ -248,26 +206,22 @@ model CashDrawerSession {
   @@index([tenantId])
 }
 
-// ---------------------------------------------------------------------------
-// USERS & EMPLOYEES
-// ---------------------------------------------------------------------------
-
 model User {
   id                 String     @id @default(uuid())
   tenantId           String
   name               String
   email              String
   passwordHash       String
-  pinCode            String? // fast cashier switching on shared terminals
-  role               LegacyRole @default(CASHIER) // being phased out in favor of assignedRole; kept so existing requireRole() routes are unaffected during the migration
-  assignedRoleId     String? // the new tenant-defined Role; nullable until every user is backfilled
-  commissionRate     Decimal?   @db.Decimal(5, 4) // e.g. 0.05 = 5%, null = no commission
-  phone              String? // required for MFA — a user can't enable it until this is set
-  mfaEnabled         Boolean    @default(false) // opt-in per user, not forced tenant-wide — turning it on for everyone by default would lock out any account with no phone on file
+  pinCode            String?
+  role               LegacyRole @default(CASHIER)
+  assignedRoleId     String?
+  commissionRate     Decimal?   @db.Decimal(5, 4)
+  phone              String?
+  mfaEnabled         Boolean    @default(false)
   isActive           Boolean    @default(true)
   updatedAt          DateTime   @default(now()) @updatedAt
-  mustChangePassword Boolean    @default(false) // true after an admin sets/resets the password — enforced server-side in authenticate.js until the user picks their own
-  passwordChangedAt  DateTime? // JWTs issued before this are rejected, so a reset/change signs out every other session
+  mustChangePassword Boolean    @default(false)
+  passwordChangedAt  DateTime?
   createdAt          DateTime   @default(now())
 
   tenant               Tenant              @relation(fields: [tenantId], references: [id])
@@ -292,23 +246,10 @@ model User {
   @@index([assignedRoleId])
 }
 
-// ---------------------------------------------------------------------------
-// ROLES, PERMISSIONS & API KEYS
-//
-// Permission is a single global, system-defined catalog — one row per
-// distinct action a client can request (roughly one per route), seeded by
-// scripts/seedPermissions.js and never created through the API. Role is
-// tenant-defined: each tenant gets its own rows (including 5 pre-seeded
-// ones mirroring the legacy fixed roles) and assigns whichever Permissions
-// it wants to each one, however it wants — there is no fixed mapping.
-// ApiKey lets a tenant grant a *subset* of a role's reach to a third-party
-// integration without creating it a real login.
-// ---------------------------------------------------------------------------
-
 model Permission {
   id          String   @id @default(uuid())
-  code        String   @unique // e.g. "products.create", "orders.refund"
-  category    String // groups related codes for a role-editor UI, e.g. "products"
+  code        String   @unique
+  category    String
   description String?
   createdAt   DateTime @default(now())
 
@@ -322,7 +263,7 @@ model Role {
   id        String   @id @default(uuid())
   tenantId  String
   name      String
-  isSystem  Boolean  @default(false) // one of the 5 pre-seeded roles; the OWNER one can't be deactivated
+  isSystem  Boolean  @default(false)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
@@ -345,15 +286,12 @@ model RolePermission {
   @@index([permissionId])
 }
 
-// keyHash is the only thing ever stored — the raw key is shown once, at
-// creation, and never persisted or retrievable again (same principle as a
-// password).
 model ApiKey {
   id          String    @id @default(uuid())
   tenantId    String
-  name        String // human label, e.g. "Zapier integration"
+  name        String
   keyHash     String    @unique
-  keyPrefix   String // first few chars, shown in the UI so a key can be identified without exposing it
+  keyPrefix   String
   isActive    Boolean   @default(true)
   lastUsedAt  DateTime?
   expiresAt   DateTime?
@@ -394,15 +332,11 @@ model EmployeeShift {
   @@index([tenantId])
 }
 
-// ---------------------------------------------------------------------------
-// CATALOG (variant-centric: every Product has >=1 ProductVariant)
-// ---------------------------------------------------------------------------
-
 model Category {
   id        String     @id @default(uuid())
   tenantId  String
   name      String
-  parentId  String? // supports nested categories
+  parentId  String?
   isActive  Boolean    @default(true)
   updatedAt DateTime   @default(now()) @updatedAt
   tenant    Tenant     @relation(fields: [tenantId], references: [id])
@@ -419,7 +353,7 @@ model Product {
   categoryId     String?
   name           String
   description    String?  @db.Text
-  isComposite    Boolean  @default(false) // true = made from other variants (e.g. a Latte)
+  isComposite    Boolean  @default(false)
   trackInventory Boolean  @default(true)
   isActive       Boolean  @default(true)
   updatedAt      DateTime @default(now()) @updatedAt
@@ -439,9 +373,9 @@ model ProductVariant {
   productId  String
   sku        String
   barcode    String?
-  attributes Json? // e.g. { "size": "M", "color": "Red" }
+  attributes Json?
   price      Decimal  @db.Decimal(10, 2)
-  cost       Decimal? @db.Decimal(10, 2) // for margin reporting
+  cost       Decimal? @db.Decimal(10, 2)
   taxRateId  String?
   isActive   Boolean  @default(true)
   updatedAt  DateTime @default(now()) @updatedAt
@@ -464,8 +398,6 @@ model ProductVariant {
   @@index([productId])
 }
 
-// Bill-of-materials for composite products, e.g. a "Latte" variant deducts
-// 0.2L of a "Milk" variant and 18g of a "Coffee Beans" variant on sale.
 model ProductComponent {
   id                 String  @id @default(uuid())
   parentVariantId    String
@@ -481,7 +413,7 @@ model ProductComponent {
 model ModifierGroup {
   id        String   @id @default(uuid())
   tenantId  String
-  name      String // e.g. "Toppings", "Size Add-ons"
+  name      String
   minSelect Int      @default(0)
   maxSelect Int      @default(1)
   isActive  Boolean  @default(true)
@@ -497,7 +429,7 @@ model ModifierGroup {
 model Modifier {
   id              String   @id @default(uuid())
   modifierGroupId String
-  name            String // e.g. "Extra Cheese"
+  name            String
   priceAdjustment Decimal  @default(0) @db.Decimal(10, 2)
   isActive        Boolean  @default(true)
   updatedAt       DateTime @default(now()) @updatedAt
@@ -518,12 +450,6 @@ model ProductModifierGroup {
   @@id([productId, modifierGroupId])
 }
 
-// ---------------------------------------------------------------------------
-// INVENTORY & SUPPLY CHAIN
-// ---------------------------------------------------------------------------
-
-// Materialized snapshot of on-hand quantity per variant per location.
-// Source of truth is InventoryLog below; this can always be rebuilt from it.
 model InventoryItem {
   id                String   @id @default(uuid())
   tenantId          String
@@ -541,17 +467,14 @@ model InventoryItem {
   @@index([tenantId])
 }
 
-// Append-only event log for every inventory change. Never mutate rows here —
-// this is what makes offline sync reconciliation and shrinkage auditing
-// possible without losing the "why did stock change" trail.
 model InventoryLog {
   id          String   @id @default(uuid())
   tenantId    String
   variantId   String
   locationId  String
-  changeQty   Decimal  @db.Decimal(10, 3) // negative = decrement, positive = increment
-  reason      String // sale | return | adjustment | transfer_in | transfer_out | purchase_order
-  referenceId String? // orderId / refundId / purchaseOrderId / stockTransferId that caused this
+  changeQty   Decimal  @db.Decimal(10, 3)
+  reason      String
+  referenceId String?
   createdAt   DateTime @default(now())
 
   tenant   Tenant         @relation(fields: [tenantId], references: [id])
@@ -645,14 +568,10 @@ model StockTransferItem {
   @@index([stockTransferId])
 }
 
-// ---------------------------------------------------------------------------
-// CUSTOMERS, LOYALTY & STORE CREDIT
-// ---------------------------------------------------------------------------
-
 model CustomerGroup {
   id                 String   @id @default(uuid())
   tenantId           String
-  name               String // e.g. "Wholesale", "VIP"
+  name               String
   discountPercentage Decimal  @default(0) @db.Decimal(5, 4)
   isActive           Boolean  @default(true)
   updatedAt          DateTime @default(now()) @updatedAt
@@ -687,12 +606,11 @@ model Customer {
   @@index([tenantId])
 }
 
-// One loyalty program config per tenant.
 model LoyaltyProgram {
   id                    String  @id @default(uuid())
   tenantId              String  @unique
-  pointsPerCurrencyUnit Decimal @default(1) @db.Decimal(10, 4) // points earned per $1 spent
-  redemptionRate        Decimal @default(0.01) @db.Decimal(10, 4) // $ value per point redeemed
+  pointsPerCurrencyUnit Decimal @default(1) @db.Decimal(10, 4)
+  redemptionRate        Decimal @default(0.01) @db.Decimal(10, 4)
   isActive              Boolean @default(true)
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
@@ -732,10 +650,6 @@ model StoreCreditTransaction {
   @@index([customerId])
 }
 
-// ---------------------------------------------------------------------------
-// GIFT CARDS & PROMOTIONS
-// ---------------------------------------------------------------------------
-
 model GiftCard {
   id                 String    @id @default(uuid())
   tenantId           String
@@ -774,9 +688,9 @@ model Promotion {
   id          String        @id @default(uuid())
   tenantId    String
   name        String
-  code        String? // null = automatic promotion, not coupon-triggered
+  code        String?
   type        PromotionType
-  value       Decimal       @db.Decimal(10, 2) // percentage (0-100) or fixed amount depending on type
+  value       Decimal       @db.Decimal(10, 2)
   minSubtotal Decimal?      @db.Decimal(10, 2)
   startsAt    DateTime?
   endsAt      DateTime?
@@ -791,15 +705,11 @@ model Promotion {
   @@index([tenantId])
 }
 
-// ---------------------------------------------------------------------------
-// TAX
-// ---------------------------------------------------------------------------
-
 model TaxRate {
   id        String   @id @default(uuid())
   tenantId  String
-  name      String // e.g. "Standard VAT", "Zero-rated"
-  rate      Decimal  @db.Decimal(6, 4) // e.g. 0.16 = 16%
+  name      String
+  rate      Decimal  @db.Decimal(6, 4)
   region    String?
   isDefault Boolean  @default(false)
   isActive  Boolean  @default(true)
@@ -811,24 +721,20 @@ model TaxRate {
   @@index([tenantId])
 }
 
-// ---------------------------------------------------------------------------
-// SALES: ORDERS, PAYMENTS, REFUNDS
-
 model Order {
-  id                  String       @id @default(uuid()) // also serves as the idempotency key
+  id                  String       @id @default(uuid())
   tenantId            String
-  orderNumber         Int          @unique @default(autoincrement()) // human-readable receipt number (globally sequential, not per-tenant)
+  orderNumber         Int          @unique @default(autoincrement())
   locationId          String
   terminalId          String?
   cashDrawerSessionId String?
-  userId              String // cashier who rang up the sale
+  userId              String
   customerId          String?
   channel             OrderChannel @default(POS)
   source              OrderSource  @default(ONLINE)
-  terminalReceiptNo   String? // terminal-local receipt number, e.g. T1-20260925-0042
-  terminalCreatedAt   DateTime? // when the terminal rang the sale up (can be long before it synced)
+  terminalReceiptNo   String?
+  terminalCreatedAt   DateTime?
   status              OrderStatus  @default(OPEN)
-  currency            String       @default("USD") @db.VarChar(3) // snapshot of tenant.currency at creation — stays correct even if a tenant's currency is ever changed later
   subtotal            Decimal      @db.Decimal(10, 2)
   discountTotal       Decimal      @default(0) @db.Decimal(10, 2)
   taxTotal            Decimal      @db.Decimal(10, 2)
@@ -877,7 +783,7 @@ model OrderItemModifier {
   id              String  @id @default(uuid())
   orderItemId     String
   modifierId      String
-  priceAdjustment Decimal @db.Decimal(10, 2) // snapshot of price at time of sale
+  priceAdjustment Decimal @db.Decimal(10, 2)
 
   orderItem OrderItem @relation(fields: [orderItemId], references: [id])
   modifier  Modifier  @relation(fields: [modifierId], references: [id])
@@ -885,8 +791,6 @@ model OrderItemModifier {
   @@index([orderItemId])
 }
 
-// Applied discounts on an order — either from a Promotion or a manual
-// override (promotionId null), always tied to who approved it.
 model OrderDiscount {
   id              String  @id @default(uuid())
   orderId         String
@@ -905,9 +809,9 @@ model Payment {
   id             String        @id @default(uuid())
   orderId        String
   method         PaymentMethod
-  amount         Decimal       @db.Decimal(10, 2) // negative amount = refund payment
+  amount         Decimal       @db.Decimal(10, 2)
   status         PaymentStatus @default(PENDING)
-  transactionRef String? // gateway reference for reconciliation
+  transactionRef String?
   createdAt      DateTime      @default(now())
 
   order Order @relation(fields: [orderId], references: [id])
@@ -915,9 +819,6 @@ model Payment {
   @@index([orderId])
 }
 
-// A refund is its own record (not a mutation of the original order) so the
-// original sale stays intact for reporting/audit, and partial refunds are
-// straightforward to model.
 model Refund {
   id                String   @id @default(uuid())
   tenantId          String
@@ -949,14 +850,6 @@ model RefundItem {
   @@index([refundId])
 }
 
-// A daily rollup per location, kept in sync in real time (incremented
-// atomically alongside order completion/refund, same "snapshot updated in
-// the same transaction as the event" pattern as InventoryItem/
-// Customer.storeCreditBalance/GiftCard.currentBalance) rather than
-// recomputed by a batch job — this codebase has no scheduler, and Order
-// stays the transactional source of truth this is only ever derived from.
-// `date` is bucketed using the Location's own timezone, not UTC, so a late
-// sale lands on the calendar day staff actually experienced.
 model DailySalesSummary {
   id            String   @id @default(uuid())
   tenantId      String
@@ -968,8 +861,8 @@ model DailySalesSummary {
   discountTotal Decimal  @default(0) @db.Decimal(12, 2)
   taxTotal      Decimal  @default(0) @db.Decimal(12, 2)
   total         Decimal  @default(0) @db.Decimal(12, 2)
-  refundTotal   Decimal  @default(0) @db.Decimal(12, 2) // refunds are booked against the day the refund happened, not the original sale date
-  netTotal      Decimal  @default(0) @db.Decimal(12, 2) // total - refundTotal
+  refundTotal   Decimal  @default(0) @db.Decimal(12, 2)
+  netTotal      Decimal  @default(0) @db.Decimal(12, 2)
   updatedAt     DateTime @updatedAt
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id])
@@ -980,18 +873,12 @@ model DailySalesSummary {
   @@index([date])
 }
 
-// -----------------------------------------------
-// AUDIT
-// ---------------------------------------------------------------------------
-
-// Generic audit trail: every price override, void, discount, refund, or
-// sensitive config change should write here in addition to its own table.
 model AuditLog {
   id         String   @id @default(uuid())
   tenantId   String
   userId     String?
-  action     String // e.g. "order.void", "product.price_override", "discount.apply"
-  entityType String // e.g. "Order", "Product"
+  action     String
+  entityType String
   entityId   String
   metadata   Json?
   createdAt  DateTime @default(now())
@@ -1003,19 +890,12 @@ model AuditLog {
   @@index([entityType, entityId])
 }
 
-// ---------------------------------------------------------------------------
-// ENUMS
-// ---------------------------------------------------------------------------
-
 enum TenantStatus {
   ACTIVE
   SUSPENDED
   CANCELLED
 }
 
-// Being phased out in favor of the Role/Permission tables below. Kept only
-// so existing requireRole() checks keep working unchanged during the
-// migration — see User.role's comment.
 enum LegacyRole {
   OWNER
   MANAGER
@@ -1033,9 +913,6 @@ enum OrderStatus {
   PARTIALLY_REFUNDED
 }
 
-// Where an order originated. OFFLINE_SYNC orders were rung up on a terminal
-// with no connection and carry that terminal's price/tax snapshot, so the
-// server records them as-is instead of recomputing (importOfflineOrder).
 enum OrderSource {
   ONLINE
   OFFLINE_SYNC
@@ -1055,10 +932,6 @@ enum PaymentMethod {
   OTHER
 }
 
-// TILL = Buy Goods till number, PAYBILL = Paybill shortcode + account number.
-// Only this distinction matters for v1 (manual confirmation): it decides
-// which STK-push TransactionType a later Daraja integration would use, and
-// how the cashier/receipt describe the number to the customer.
 enum MpesaShortcodeType {
   TILL
   PAYBILL
@@ -1117,22 +990,6 @@ enum PromotionType {
   BOGO
 }
 
-// ---------------------------------------------------------------------------
-// SMS / OTP / NOTIFICATIONS (Africa's Talking)
-//
-// Every model here is tenant-scoped (tenantId added — the version this was
-// adapted from had none, which would have pooled every tenant's message
-// history, templates, and campaigns into one shared, unisolated set,
-// breaking the row-level isolation every other table in this schema
-// depends on). SmsOtp is the one exception: it's reachable only via its
-// User, the same shape as Modifier/ProductComponent, and — critically — is
-// looked up during login itself, before any tenant context exists yet.
-// `createdBy` on SmsCampaign points at User (this schema's actual staff
-// model; there's no separate Staff model). No @@map/onDelete — kept
-// consistent with the rest of the schema, which uses neither (soft-delete
-// via isActive everywhere, no hard deletes to cascade).
-// ---------------------------------------------------------------------------
-
 enum SmsEventType {
   ORDER_CREATED
   ORDER_DISPATCHED
@@ -1188,10 +1045,10 @@ model SmsMessage {
   tenantId                String
   templateId              String?
   campaignId              String?
-  userId                  String? // set when the recipient is a staff member; customer/supplier sends address by recipientPhone alone
-  recipientPhone          String
+  userId                  String?
   recipientName           String?
-  recipientType           String // CUSTOMER, STAFF, SUPPLIER
+  recipientPhone          String
+  recipientType           String
   messageContent          String        @db.Text
   status                  SmsStatus     @default(PENDING)
   africastalkingMessageId String?
@@ -1200,8 +1057,8 @@ model SmsMessage {
   lastRetryAt             DateTime?
   scheduledFor            DateTime?
   eventType               SmsEventType?
-  referenceId             String? // Order id, SmsOtp id, etc.
-  referenceType           String? // ORDER, SMS_OTP, etc.
+  referenceId             String?
+  referenceType           String?
   failureReason           String?
   sentAt                  DateTime?
   deliveredAt             DateTime?
@@ -1224,19 +1081,15 @@ model SmsMessage {
   @@index([createdAt])
 }
 
-// Campaign *execution* (working through recipientCount/filters and actually
-// sending in bulk) needs a background job runner this codebase doesn't have
-// yet — this models the resource, but nothing here processes SENDING ->
-// COMPLETED on its own; that's a deliberate gap, not an oversight.
 model SmsCampaign {
   id                 String         @id @default(uuid())
   tenantId           String
   name               String
   templateId         String
   status             CampaignStatus @default(DRAFT)
-  recipientMode      String         @default("FILTER") // FILTER, SELECTED, MANUAL, MIXED
-  filters            Json // recipient filters, shape owned by the caller (e.g. customerGroupId, marketingOptIn)
-  selectedRecipients Json? // explicit userIds or manual phone numbers
+  recipientMode      String         @default("FILTER")
+  filters            Json
+  selectedRecipients Json?
   scheduledFor       DateTime?
   startedAt          DateTime?
   completedAt        DateTime?
@@ -1261,13 +1114,6 @@ model SmsCampaign {
   @@index([createdAt])
 }
 
-// No tenantId of its own — reachable only via userId, and looked up during
-// login itself (before any tenant/ALS context exists), same shape as the
-// Tenant/User lookups auth.service.js already does pre-authentication.
-// Self-service "forgot password" codes. Only an HMAC of the code is stored
-// (never the code itself), each row allows a small number of guesses, and
-// like SmsOtp it has no tenantId of its own — it's reached through its User
-// before any tenant context exists.
 model PasswordReset {
   id        String    @id @default(uuid())
   userId    String
@@ -1298,23 +1144,6 @@ model SmsOtp {
   @@index([phone, code, expiresAt])
 }
 
-// ---------------------------------------------------------------------------
-// INVOICES
-//
-// Distinct from Order/Payment: an Order is an immediate POS sale (paid in
-// full at the register, in whatever mix of methods). An Invoice is a bill
-// issued to a customer to be paid later — in full or in installments — so
-// it needs its own lifecycle (DRAFT -> SENT -> PARTIALLY_PAID/PAID, or
-// VOID) and its own running balance. There's no OVERDUE status: with no
-// background job/scheduler in this codebase (same reasoning as
-// SmsCampaign), "overdue" is computed at read time from dueDate + status
-// instead of a state a job would need to flip.
-//
-// An invoice may optionally reference the Order it was raised for
-// (`orderId`), but carries its own line items rather than reusing
-// OrderItem — an invoice can also be raised standalone (e.g. billing a
-// wholesale customer for something never rung up through the till).
-
 enum InvoiceStatus {
   DRAFT
   SENT
@@ -1326,15 +1155,15 @@ enum InvoiceStatus {
 model Invoice {
   id            String        @id @default(uuid())
   tenantId      String
-  invoiceNumber Int           @unique @default(autoincrement()) // human-readable, globally sequential (mirrors Order.orderNumber)
-  orderId       String? // the POS sale this invoice bills, if any
+  invoiceNumber Int           @unique @default(autoincrement())
+  orderId       String?
   customerId    String
   locationId    String?
   createdById   String
   status        InvoiceStatus @default(DRAFT)
   issueDate     DateTime      @default(now())
   dueDate       DateTime
-  currency      String        @default("USD") @db.VarChar(3) // snapshot of tenant.currency at creation, same reasoning as Order.currency
+  currency      String        @default("USD") @db.VarChar(3)
   subtotal      Decimal       @db.Decimal(10, 2)
   discountTotal Decimal       @default(0) @db.Decimal(10, 2)
   taxTotal      Decimal       @db.Decimal(10, 2)
@@ -1363,7 +1192,7 @@ model Invoice {
 model InvoiceItem {
   id          String  @id @default(uuid())
   invoiceId   String
-  variantId   String? // nullable so a free-text line (e.g. "Consulting - 2hrs") doesn't require a catalog product
+  variantId   String?
   description String
   quantity    Decimal @db.Decimal(10, 3)
   unitPrice   Decimal @db.Decimal(10, 2)
@@ -1391,16 +1220,13 @@ model InvoicePayment {
   @@index([invoiceId])
 }
 
-// One row per operation a terminal has pushed via /sync/push, keyed by the
-// client-generated opId so a retried upload is recognised and answered with
-// the original result instead of being applied twice.
 model SyncOp {
   id          String   @id @default(uuid())
   tenantId    String
   terminalId  String
   opId        String
   type        String
-  status      String // CREATED | REJECTED
+  status      String
   result      Json
   processedAt DateTime @default(now())
 
