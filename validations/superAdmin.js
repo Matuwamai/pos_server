@@ -6,9 +6,6 @@ const login = {
     password: z.string().min(1),
   }),
 };
- 
-// Used when an existing super admin creates another one — no public
-// self-registration endpoint for platform-level access.
 const create = {
   body: z.object({
     name: z.string().min(2).max(120),

@@ -32,15 +32,11 @@ const list = {
   query: z.object({
     customerId: z.string().uuid().optional(),
     status: statusEnum.optional(),
-    overdue: z.coerce.boolean().optional(), // dueDate has passed and it's still SENT/PARTIALLY_PAID
+    overdue: z.coerce.boolean().optional(), 
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().positive().max(100).default(20),
   }),
 };
-
-// Only meaningful while the invoice is still a DRAFT — enforced in the
-// service, since that depends on current DB state, not something a schema
-// alone can express.
 const update = {
   params: idParams,
   body: z

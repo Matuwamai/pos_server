@@ -1,8 +1,4 @@
 import { z } from 'zod';
-
-// Internal event shape for the webhook stub — NOT a real provider's payload.
-// Once a billing provider is chosen, this gets replaced by mapping that
-// provider's actual event schema onto services/subscription.js's calls.
 const webhookEvent = {
   body: z.object({
     event: z.enum(['activated', 'renewed', 'past_due', 'cancelled']),

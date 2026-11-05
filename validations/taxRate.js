@@ -5,7 +5,7 @@ const idParams = z.object({ id: z.string().uuid() });
 const create = {
   body: z.object({
     name: z.string().min(1).max(120),
-    rate: z.coerce.number().min(0).max(1), // e.g. 0.16 = 16%
+    rate: z.coerce.number().min(0).max(1), 
     region: z.string().min(1).max(120).optional(),
     isDefault: z.coerce.boolean().optional(),
   }),

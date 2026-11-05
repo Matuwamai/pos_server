@@ -31,7 +31,7 @@ const getById = {
 
 const list = {
   query: z.object({
-    search: z.string().min(1).max(120).optional(), // matches against name OR code
+    search: z.string().min(1).max(120).optional(), 
     eventType: eventTypeEnum.optional(),
     isActive: z.coerce.boolean().optional(),
     page: z.coerce.number().int().positive().default(1),

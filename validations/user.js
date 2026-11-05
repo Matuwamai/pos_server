@@ -9,7 +9,7 @@ const create = {
     email: z.string().email(),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     role: roleEnum,
-    assignedRoleId: z.string().uuid().optional(), // the new tenant-defined Role
+    assignedRoleId: z.string().uuid().optional(), 
     pinCode: z.string().min(4).max(12).optional(),
     commissionRate: z.coerce.number().min(0).max(1).optional(),
   }),
@@ -21,7 +21,7 @@ const getById = {
 
 const list = {
   query: z.object({
-    search: z.string().min(1).max(120).optional(), // matches against name OR email
+    search: z.string().min(1).max(120).optional(), 
     role: roleEnum.optional(),
     isActive: z.coerce.boolean().optional(),
     page: z.coerce.number().int().positive().default(1),

@@ -8,7 +8,7 @@ const create = {
   body: z
     .object({
       name: z.string().min(1).max(120),
-      code: codeSchema.optional(), // omitted = automatic promotion, not coupon-triggered
+      code: codeSchema.optional(), 
       type: typeEnum,
       value: z.coerce.number().nonnegative(),
       minSubtotal: z.coerce.number().nonnegative().optional(),
@@ -31,7 +31,7 @@ const getById = {
 
 const list = {
   query: z.object({
-    search: z.string().min(1).max(120).optional(), // matches against name OR code
+    search: z.string().min(1).max(120).optional(), 
     isActive: z.coerce.boolean().optional(),
     type: typeEnum.optional(),
     page: z.coerce.number().int().positive().default(1),
@@ -39,9 +39,6 @@ const list = {
   }),
 };
 
-// The percentage<=100 cross-field check only runs at creation, when the
-// full object is known — a partial update can't validate `value` against
-// `type` unless both happen to be present in the same request.
 const update = {
   params: idParams,
   body: z

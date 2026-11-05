@@ -16,7 +16,7 @@ const getById = {
 
 const list = {
   query: z.object({
-    search: z.string().min(1).max(120).optional(), // matches against name OR address
+    search: z.string().min(1).max(120).optional(), 
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().positive().max(100).default(20),
   }),

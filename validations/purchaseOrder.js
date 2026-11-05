@@ -30,9 +30,6 @@ const list = {
     limit: z.coerce.number().int().positive().max(100).default(20),
   }),
 };
-
-// Only allowed while still DRAFT — replaces the whole items array rather
-// than diffing it, since a draft PO is edited as a whole document.
 const update = {
   params: idParams,
   body: z.object({

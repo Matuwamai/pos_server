@@ -26,10 +26,6 @@ const list = {
     limit: z.coerce.number().int().positive().max(100).default(20),
   }),
 };
-
-// Only meaningful while the campaign is still a DRAFT — enforced in the
-// service, since "editable while DRAFT" depends on current DB state, not
-// something a schema alone can express.
 const update = {
   params: idParams,
   body: z

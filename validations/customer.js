@@ -24,10 +24,6 @@ const list = {
     limit: z.coerce.number().int().positive().max(100).default(20),
   }),
 };
-
-// storeCreditBalance is deliberately not editable here — it's only ever
-// changed through StoreCreditTransaction, so there's always an auditable
-// reason for every change to it.
 const update = {
   params: idParams,
   body: z

@@ -4,7 +4,7 @@ const idParams = z.object({ id: z.string().uuid() });
 
 const list = {
   query: z.object({
-    search: z.string().min(1).max(120).optional(), // matches against variant sku OR product name
+    search: z.string().min(1).max(120).optional(), 
     locationId: z.string().uuid().optional(),
     variantId: z.string().uuid().optional(),
     lowStockOnly: z.coerce.boolean().optional(),
@@ -16,10 +16,6 @@ const list = {
 const getById = {
   params: idParams,
 };
-
-// quantity is deliberately not editable here — it only ever changes through
-// an adjustment (or a purchase order / stock transfer), so there's always
-// an InventoryLog entry explaining why.
 const update = {
   params: idParams,
   body: z.object({

@@ -11,11 +11,6 @@ const variantInput = z.object({
   cost: z.coerce.number().nonnegative().optional(),
   taxRateId: z.string().uuid().optional(),
 });
-
-// Every product must have at least one variant — see schema.prisma's note
-// on the catalog being variant-centric. There's no "create a bare product"
-// endpoint; a default variant is required up front, same as onboarding
-// always creates a tenant's first location/subscription alongside it.
 const create = {
   body: z.object({
     categoryId: z.string().uuid().optional(),
@@ -33,7 +28,7 @@ const getById = {
 
 const list = {
   query: z.object({
-    search: z.string().min(1).max(120).optional(), // matches against name OR description
+    search: z.string().min(1).max(120).optional(), 
     categoryId: z.string().uuid().optional(),
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().positive().max(100).default(20),

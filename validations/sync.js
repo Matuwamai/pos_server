@@ -2,9 +2,7 @@ import { z } from 'zod';
 
 const pull = {
   query: z.object({
-    since: z.coerce.number().int().nonnegative().default(0), // epoch ms; 0 = full download
-    // Required for the web app's admin tooling. A till's location comes from
-    // its device token, so the parameter is ignored for those callers.
+    since: z.coerce.number().int().nonnegative().default(0), 
     locationId: z.string().uuid().optional(),
     limit: z.coerce.number().int().positive().max(1000).default(500),
   }),

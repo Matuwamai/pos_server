@@ -5,7 +5,7 @@ const codeSchema = z.string().regex(/^[A-Z0-9-]{4,32}$/, 'Code must be 4-32 uppe
 
 const issue = {
   body: z.object({
-    code: codeSchema.optional(), // auto-generated if omitted
+    code: codeSchema.optional(), 
     initialBalance: z.coerce.number().positive(),
     issuedToCustomerId: z.string().uuid().optional(),
     expiresAt: z.coerce.date().optional(),
@@ -18,7 +18,7 @@ const getById = {
 
 const list = {
   query: z.object({
-    search: z.string().min(1).max(64).optional(), // matches against code
+    search: z.string().min(1).max(64).optional(), 
     isActive: z.coerce.boolean().optional(),
     issuedToCustomerId: z.string().uuid().optional(),
     page: z.coerce.number().int().positive().default(1),

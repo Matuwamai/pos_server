@@ -8,10 +8,6 @@ const itemInput = z.object({
   quantity: z.coerce.number().positive(),
   modifierIds: z.array(z.string().uuid()).optional(),
 });
-
-// Either an existing promo code (amount auto-computed from it, unless
-// explicitly overridden), a loyalty-points redemption (amount computed from
-// the program's redemptionRate), or a manual amount+reason with neither.
 const discountInput = z
   .object({
     promotionCode: z.string().optional(),
@@ -34,10 +30,6 @@ const paymentInput = z
     message: 'giftCardCode is required for GIFT_CARD payments',
     path: ['giftCardCode'],
   })
-  // M-Pesa is confirmed manually in v1 (no Daraja integration yet) — the
-  // cashier reads the SMS confirmation code off the customer's phone and
-  // types it in; without it there's nothing to reconcile the payment
-  // against later.
   .refine((d) => d.method !== 'MPESA' || !!d.transactionRef, {
     message: 'transactionRef (the M-Pesa confirmation code) is required for MPESA payments',
     path: ['transactionRef'],
@@ -62,7 +54,7 @@ const getById = {
 
 const list = {
   query: z.object({
-    search: z.string().min(1).max(60).optional(), // matches order number (exact) OR customer name
+    search: z.string().min(1).max(60).optional(), 
     status: z.enum(['OPEN', 'PARKED', 'COMPLETED', 'VOIDED', 'REFUNDED', 'PARTIALLY_REFUNDED']).optional(),
     customerId: z.string().uuid().optional(),
     locationId: z.string().uuid().optional(),
@@ -86,8 +78,6 @@ const refund = {
       reason: z.string().max(255).optional(),
       refundMethod: paymentMethodEnum,
       giftCardCode: z.string().optional(),
-      // Only used when the caller has no session user (a device/terminal
-      // token) — see controllers/order.js and services/order.js's refundOrder.
       processedByUserId: z.string().uuid().optional(),
     })
     .refine((d) => d.refundMethod !== 'GIFT_CARD' || !!d.giftCardCode, {
