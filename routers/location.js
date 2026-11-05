@@ -14,10 +14,6 @@ router.get('/:id', requirePermission('locations.read'), validate(locationValidat
 
 router.post('/', requirePermission('locations.create'), validate(locationValidation.create), locationController.create);
 router.patch('/:id', requirePermission('locations.update'), validate(locationValidation.update), locationController.update);
-
-// Soft delete only — a location can be referenced by orders/inventory/shifts
-// going back to day one, so it's never hard-deleted (same reasoning as
-// tenants never being hard-deleted, see tenant.service.js).
 router.post('/:id/deactivate', requirePermission('locations.deactivate'), validate(locationValidation.deactivate), locationController.deactivate);
 router.post('/:id/reactivate', requirePermission('locations.reactivate'), validate(locationValidation.reactivate), locationController.reactivate);
 

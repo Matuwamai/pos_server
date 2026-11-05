@@ -10,9 +10,6 @@ const router = express.Router();
 
 router.use(authenticate);
 
-// No permission gate: every authenticated tenant user (any role) needs to
-// read their own tenant's name/logo/M-Pesa till-paybill number — the latter
-// is shown at the point of sale, not just on a settings page.
 router.get('/', tenantSelfController.getMine);
 
 router.patch('/logo', requirePermission('tenant.branding.update'), uploadImage.single('logo'), tenantSelfController.updateLogo);

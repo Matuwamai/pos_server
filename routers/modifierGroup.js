@@ -17,8 +17,6 @@ router.post('/', requirePermission('modifierGroups.create'), validate(modifierGr
 router.patch('/:id', requirePermission('modifierGroups.update'), validate(modifierGroupValidation.update), modifierGroupController.update);
 router.post('/:id/deactivate', requirePermission('modifierGroups.deactivate'), validate(modifierGroupValidation.deactivate), modifierGroupController.deactivate);
 router.post('/:id/reactivate', requirePermission('modifierGroups.reactivate'), validate(modifierGroupValidation.reactivate), modifierGroupController.reactivate);
-
-// Nested: /api/v1/modifier-groups/:modifierGroupId/modifiers
 router.get('/:modifierGroupId/modifiers', requirePermission('modifiers.list'), validate(modifierValidation.list), modifierController.list);
 router.get('/:modifierGroupId/modifiers/:id', requirePermission('modifiers.read'), validate(modifierValidation.getById), modifierController.getById);
 router.post('/:modifierGroupId/modifiers', requirePermission('modifiers.create'), validate(modifierValidation.create), modifierController.create);

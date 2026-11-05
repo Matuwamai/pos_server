@@ -8,11 +8,6 @@ import roleValidation from '../validations/role.js';
 const router = express.Router();
 
 router.use(authenticate);
-
-// New resource, so it uses the new requirePermission system from the
-// start rather than requireRole — these codes are OWNER-only in the
-// default seed (config/defaultRolePermissions.js), but a tenant can grant
-// them to any role it wants.
 router.get('/', requirePermission('roles.list'), validate(roleValidation.list), roleController.list);
 router.get('/:id', requirePermission('roles.read'), validate(roleValidation.getById), roleController.getById);
 router.post('/', requirePermission('roles.create'), validate(roleValidation.create), roleController.create);

@@ -9,8 +9,6 @@ const router = express.Router();
 
 router.use(authenticate);
 
-// readOwn gates entry to these list/detail routes; the service further
-// restricts to "own only" unless the caller also holds readAll.
 router.get('/active', requirePermission('employeeShifts.readOwn'), employeeShiftController.getActive);
 router.get('/', requirePermission('employeeShifts.readOwn'), validate(employeeShiftValidation.list), employeeShiftController.list);
 router.get('/:id', requirePermission('employeeShifts.readOwn'), validate(employeeShiftValidation.getById), employeeShiftController.getById);

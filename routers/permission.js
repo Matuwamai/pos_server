@@ -7,7 +7,6 @@ const router = express.Router();
 
 router.use(authenticate);
 
-// Read-only — the catalog is seeded, never created through the API.
 router.get('/', requirePermission('permissions.list'), permissionController.list);
 
 export default router;

@@ -9,7 +9,6 @@ const router = express.Router();
 
 router.use(authenticate);
 
-// Declared before / so it isn't swallowed by anything more general later.
 router.get('/balance/:customerId', requirePermission('loyaltyTransactions.balance'), validate(loyaltyTransactionValidation.balanceParams), loyaltyTransactionController.getBalance);
 router.get('/', requirePermission('loyaltyTransactions.list'), validate(loyaltyTransactionValidation.list), loyaltyTransactionController.list);
 

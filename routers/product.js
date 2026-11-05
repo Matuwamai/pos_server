@@ -12,10 +12,6 @@ import productVariantValidation from '../validations/productVariant.js';
 const router = express.Router();
 
 router.use(authenticate);
-
-// CSV import/export — declared before the /:id routes below, though route
-// order doesn't actually matter here since these are two path segments
-// (/export/csv) and /:id only ever matches one.
 router.get('/export/csv', requirePermission('products.export'), productImportExportController.exportCsv);
 router.post(
   '/import/csv',
@@ -44,7 +40,6 @@ router.delete(
   productController.detachModifierGroup
 );
 
-// Nested: /api/v1/products/:productId/variants
 router.post(
   '/:productId/variants',
   requirePermission('variants.create'),
@@ -75,8 +70,6 @@ router.post(
   validate(productVariantValidation.reactivate),
   productVariantController.reactivate
 );
-
-// Nested: bill-of-materials for a composite variant
 router.get(
   '/:productId/variants/:variantId/components',
   requirePermission('variants.components.list'),

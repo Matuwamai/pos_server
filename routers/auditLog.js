@@ -9,8 +9,6 @@ const router = express.Router();
 
 router.use(authenticate);
 
-// Read-only — entries are written internally by other services, never
-// created directly through the API.
 router.get('/', requirePermission('auditLogs.list'), validate(auditLogValidation.list), auditLogController.list);
 
 export default router;
