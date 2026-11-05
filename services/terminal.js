@@ -4,11 +4,8 @@ import ApiError from '../utils/ApiError.js';
 import locationService from './location.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
-// Same rule as location.service.js: tenantId is never passed explicitly —
-// the tenant-scoping Prisma extension injects it from the request context.
-
 async function createTerminal({ locationId, name, deviceIdentifier, platform }) {
-  await locationService.getLocationById(locationId); // 404s if missing or belongs to another tenant
+  await locationService.getLocationById(locationId); 
 
   return prisma.terminal.create({
     data: { locationId, name, deviceIdentifier, platform },
@@ -60,10 +57,6 @@ async function reactivateTerminal(id) {
   }
   return prisma.terminal.update({ where: { id }, data: { isActive: true } });
 }
-
-// Called periodically by the till app itself so lastSeenAt reflects whether
-// a terminal is actually online, independent of isActive (which reflects a
-// staff decision to decommission a device, not connectivity).
 async function heartbeat(id) {
   await getTerminalById(id);
   return prisma.terminal.update({ where: { id }, data: { lastSeenAt: new Date() } });
@@ -80,10 +73,6 @@ const terminalService = {
 };
 
 ;
-
-// Device tokens last a year but are revocable: the token carries the
-// terminal's tokenVersion, and the terminal middleware re-checks it on every
-// request. Revoke bumps the version, so old tokens fail immediately.
 const DEVICE_TOKEN_TTL = '365d';
 
 async function enrollDevice(id) {

@@ -3,13 +3,6 @@ import ApiError from '../utils/ApiError.js';
 import customerService from './customer.js';
 import auditLogService from './auditLog.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
-
-// Unlike loyalty points, Customer.storeCreditBalance IS materialized —
-// this is the one place that snapshot and the ledger get written together,
-// same shape as inventory's applyInventoryChange. `amount` carries its own
-// sign (ISSUE/ADJUSTMENT as given, REDEEM negated before it gets here), and
-// balanceAfter is stored on the row as a point-in-time snapshot for
-// auditing, even though the running balance itself lives on Customer.
 async function applyStoreCreditChange(tx, { customerId, orderId, type, amount }) {
   const customer = await tx.customer.findUnique({ where: { id: customerId } });
   if (!customer) throw ApiError.notFound('Customer not found');
@@ -30,7 +23,7 @@ async function assertOrderBelongsToTenant(orderId) {
 }
 
 async function issueCredit({ customerId, orderId, amount }) {
-  await customerService.getCustomerById(customerId); // 404s if missing/foreign tenant
+  await customerService.getCustomerById(customerId); 
   await assertOrderBelongsToTenant(orderId);
   return prisma.$transaction((tx) => applyStoreCreditChange(tx, { customerId, orderId, type: 'ISSUE', amount }));
 }

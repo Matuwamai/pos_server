@@ -98,7 +98,7 @@ async function completeTransfer(id) {
         changeQty: Number(item.quantity),
         reason: 'transfer_in',
         referenceId: transfer.id,
-        allowNegative: true, // receiving stock in only ever increases it
+        allowNegative: true, 
       });
     }
     await tx.stockTransfer.update({ where: { id }, data: { status: 'COMPLETED', completedAt: new Date() } });
@@ -117,9 +117,6 @@ async function cancelStockTransfer(id) {
   }
 
   await prisma.$transaction(async (tx) => {
-    // Stock already left the source once IN_TRANSIT — cancelling has to put
-    // it back. Logged as 'adjustment' (not 'transfer_out' again) since this
-    // is a correction, not a second movement.
     if (transfer.status === 'IN_TRANSIT') {
       for (const item of transfer.items) {
         await inventoryService.applyInventoryChange(tx, {

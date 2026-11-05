@@ -25,12 +25,6 @@ function itemLine(item, decimalDigits) {
     </tr>`;
 }
 
-// A simple, print-friendly (80mm thermal-style) receipt rendered straight
-// from the Order data that already exists — no separate Receipt model,
-// since a receipt is just a formatted view of a completed sale. Amounts are
-// plain decimal-places-aware numbers (no repeated currency code per line —
-// impractical at 320px) with the order's own currency code shown once,
-// under the receipt number.
 async function generateReceiptHtml(orderId) {
   const order = await orderService.getOrderById(orderId);
   const tenant = await prisma.tenant.findUnique({ where: { id: order.tenantId } });

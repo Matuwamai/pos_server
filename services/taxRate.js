@@ -1,11 +1,6 @@
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
-
-// Only one TaxRate can be the tenant's default at a time — clearing every
-// other one whenever a new default is set, in the same transaction as the
-// write that sets it, so there's never a moment with zero or two defaults
-// visible to a concurrent reader.
 async function clearOtherDefaults(tx, excludeId) {
   await tx.taxRate.updateMany({
     where: { isDefault: true, ...(excludeId ? { NOT: { id: excludeId } } : {}) },

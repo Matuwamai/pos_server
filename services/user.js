@@ -7,22 +7,15 @@ import roleService from './role.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
 const PRIVILEGED_ROLES = ['OWNER', 'MANAGER'];
-
-// PINs are verified offline on the till, so the server stores only a bcrypt
-// hash — the same cost as passwords. A PIN is a short, low-entropy secret;
-// the hash is what stops a leaked database or roster from exposing it.
 async function hashPin(pin) {
   return bcrypt.hash(pin, 10);
 }
 
 function sanitize(user) {
-  const { passwordHash, ...safe } = user; // eslint-disable-line no-unused-vars
+  const { passwordHash, ...safe } = user; 
   return safe;
 }
 
-// A MANAGER can create/edit staff, but never at OWNER/MANAGER level itself
-// (nor touch an existing OWNER at all) — only an OWNER can grant that much
-// access or modify another OWNER, to block privilege escalation.
 function assertCanAssignRole(actingUser, targetRole) {
   if (actingUser.role === 'MANAGER' && PRIVILEGED_ROLES.includes(targetRole)) {
     throw ApiError.forbidden('Only an OWNER can create or promote an OWNER/MANAGER account');
@@ -38,14 +31,8 @@ function assertCanModifyTarget(actingUser, targetUser) {
 async function createUser(actingUser, { name, email, password, role, assignedRoleId, pinCode, commissionRate }) {
   assertCanAssignRole(actingUser, role);
   if (assignedRoleId) {
-    await roleService.getRoleRaw(assignedRoleId); // 404s if missing/foreign tenant
+    await roleService.getRoleRaw(assignedRoleId); 
   } else {
-    // No explicit assignedRoleId — fall back to the tenant's system role
-    // matching the legacy enum value, so every new user is automatically
-    // wired into the permission system without the caller having to know
-    // its role id. Only works while a tenant hasn't renamed/removed that
-    // system role; if they have, the caller must pass assignedRoleId
-    // explicitly instead.
     const defaultRole = await prisma.role.findFirst({ where: { name: role, isSystem: true } });
     assignedRoleId = defaultRole?.id ?? null;
   }
@@ -57,7 +44,6 @@ async function createUser(actingUser, { name, email, password, role, assignedRol
   const pinHash = pinCode ? await hashPin(pinCode) : undefined;
 
   return prisma.$transaction(async (tx) => {
-    // The password an admin types in is only a hand-off — the new user must replace it at first sign-in.
     const user = await tx.user.create({
       data: { name, email, passwordHash, role, assignedRoleId, pinCode: pinHash, commissionRate, mustChangePassword: true },
     });
@@ -92,7 +78,6 @@ async function listUsers({ search, role, isActive, page, limit }) {
   return { data: users.map(sanitize), pagination: buildPaginationMeta({ page, limit, total }) };
 }
 
-// Raw (with passwordHash) — for internal callers like changeOwnPassword.
 async function getUserRaw(id) {
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) throw ApiError.notFound('User not found');
@@ -102,11 +87,6 @@ async function getUserRaw(id) {
 async function getUserPublicById(id) {
   return sanitize(await getUserRaw(id));
 }
-
-// Blocks turning MFA on for an account with no phone on file (and blocks
-// clearing the phone while MFA stays on) — otherwise login would issue an
-// mfa_pending token and then have nowhere to send the code, permanently
-// stuck one step short of a real session.
 function assertMfaHasPhone(user, updates) {
   const phoneAfterUpdate = updates.phone !== undefined ? updates.phone : user.phone;
   const mfaAfterUpdate = updates.mfaEnabled !== undefined ? updates.mfaEnabled : user.mfaEnabled;
@@ -117,13 +97,13 @@ function assertMfaHasPhone(user, updates) {
 
 async function updateUser(actingUser, id, updates) {
   if (typeof updates.pinCode === 'string') updates = { ...updates, pinCode: await hashPin(updates.pinCode) };
-  const user = await getUserRaw(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  const user = await getUserRaw(id); 
   assertCanModifyTarget(actingUser, user);
   if (updates.role) {
     assertCanAssignRole(actingUser, updates.role);
   }
   if (updates.assignedRoleId) {
-    await roleService.getRoleRaw(updates.assignedRoleId); // 404s if missing/foreign tenant
+    await roleService.getRoleRaw(updates.assignedRoleId); 
   }
   if (updates.email) {
     const existing = await prisma.user.findFirst({ where: { email: updates.email, NOT: { id } } });
@@ -184,10 +164,6 @@ async function reactivateUser(actingUser, id) {
     return sanitize(updated);
   });
 }
-
-// Self-service subset of updateUser — no role/email/assignedRoleId, so it
-// needs no privilege checks; any authenticated user can set their own phone
-// and MFA preference.
 async function updateOwnProfile(actingUser, updates) {
   const user = await getUserRaw(actingUser.id);
   assertMfaHasPhone(user, updates);
@@ -207,14 +183,8 @@ async function changeOwnPassword(actingUser, { currentPassword, newPassword }) {
     where: { id: user.id },
     data: { passwordHash, mustChangePassword: false, passwordChangedAt: new Date() },
   });
-
-  // Every other session was just invalidated (see authenticate.js), so hand
-  // back a fresh token for this one instead of logging the caller out.
   return { token: authService.signToken(updated), user: sanitize(updated) };
 }
-
-// Admin-driven reset (forgotten password) — no currentPassword check, since
-// the acting user isn't the account owner.
 async function resetPassword(actingUser, id, newPassword) {
   const user = await getUserRaw(id);
   assertCanModifyTarget(actingUser, user);

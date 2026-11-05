@@ -35,7 +35,7 @@ async function getPromotionById(id) {
 }
 
 async function updatePromotion(id, updates) {
-  await getPromotionById(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getPromotionById(id); 
   if (updates.code) {
     await assertCodeAvailable(updates.code, id);
   }
@@ -64,10 +64,6 @@ function assertPromotionValid(promotion) {
   if (promotion.startsAt && promotion.startsAt > now) throw ApiError.conflict('This promotion has not started yet');
   if (promotion.endsAt && promotion.endsAt < now) throw ApiError.conflict('This promotion has ended');
 }
-
-// Used at checkout to validate a coupon code — and, once Order creation
-// exists, reused there to actually apply it. Checked here now so the
-// active/date-window logic exists in exactly one place.
 async function getValidPromotionByCode(code) {
   const promotion = await prisma.promotion.findFirst({ where: { code } });
   if (!promotion) throw ApiError.notFound('Promotion code not found');

@@ -31,7 +31,7 @@ async function getSmsTemplateById(id) {
 }
 
 async function updateSmsTemplate(id, updates) {
-  await getSmsTemplateById(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getSmsTemplateById(id); 
 
   if (updates.code) {
     const existing = await prisma.smsTemplate.findFirst({ where: { code: updates.code, NOT: { id } } });

@@ -24,11 +24,6 @@ async function getSmsMessageById(id) {
   return message;
 }
 
-// One-off message to a customer/staff/supplier — not tied to a template or
-// campaign, e.g. an ad-hoc note from a manager. Never throws on provider
-// failure; the failure is recorded on the message row instead, exactly like
-// smsOtp.js does for OTP sends, so callers can inspect status rather than
-// having a UI action look like it crashed.
 async function sendDirectSms(actingUser, { recipientPhone, recipientName, recipientType, message }) {
   const result = await smsProviderService.sendSms({ phone: recipientPhone, message });
 

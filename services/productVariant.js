@@ -9,7 +9,7 @@ async function getVariantById(productId, variantId) {
 }
 
 async function addVariant(productId, variantInput) {
-  const product = await productService.getProductRaw(productId); // 404s if missing/foreign tenant
+  const product = await productService.getProductRaw(productId); 
 
   return prisma.$transaction(async (tx) => {
     const variant = await tx.productVariant.create({ data: { productId, ...variantInput } });
@@ -19,7 +19,7 @@ async function addVariant(productId, variantInput) {
 }
 
 async function updateVariant(productId, variantId, updates) {
-  await getVariantById(productId, variantId); // ensures it exists under this product/tenant
+  await getVariantById(productId, variantId); 
   return prisma.productVariant.update({ where: { id: variantId }, data: updates });
 }
 
@@ -39,10 +39,6 @@ async function reactivateVariant(productId, variantId) {
   return prisma.productVariant.update({ where: { id: variantId }, data: { isActive: true } });
 }
 
-// --- Bill-of-materials (ProductComponent) --------------------------------
-// ProductComponent has no tenantId of its own — both sides are variants,
-// each already tenant-verified via getVariantById/a direct ownership
-// lookup below, so the join row is transitively safe.
 
 async function listComponents(productId, variantId) {
   await getVariantById(productId, variantId);

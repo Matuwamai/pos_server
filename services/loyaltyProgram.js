@@ -1,9 +1,6 @@
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 
-// One per tenant (tenantId is @unique on the model) — not auto-provisioned
-// at signup like Subscription is, since a loyalty program is an opt-in
-// business decision, not something required for the app to function.
 
 async function createLoyaltyProgram({ pointsPerCurrencyUnit, redemptionRate }) {
   const existing = await prisma.loyaltyProgram.findFirst();

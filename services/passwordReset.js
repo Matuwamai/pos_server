@@ -10,18 +10,14 @@ import emailService from './email.js';
 import auditLogService from './auditLog.js';
 
 const CODE_TTL_MS = 10 * 60 * 1000;
-const REQUEST_COOLDOWN_MS = 60 * 1000; // per user, between issued codes
-const MAX_ATTEMPTS = 5; // guesses allowed per issued code
+const REQUEST_COOLDOWN_MS = 60 * 1000; 
+const MAX_ATTEMPTS = 5; 
 
-// HMAC (keyed with the server secret) rather than a bare hash: a 6-digit
-// code has only a million possibilities, so an unkeyed hash in a leaked DB
-// would be reversed instantly.
+
 function hashCode(code) {
   return crypto.createHmac('sha256', process.env.JWT_SECRET).update(code).digest('hex');
 }
 
-// Pre-authentication, so there's no tenant context yet — resolved from the
-// subdomain the same way login does.
 async function findActiveUser(subdomain, email) {
   const tenant = await prisma.tenant.findUnique({ where: { subdomain } });
   if (!tenant || tenant.status !== 'ACTIVE') return null;
@@ -30,9 +26,6 @@ async function findActiveUser(subdomain, email) {
   return user;
 }
 
-// Prefers SMS when the account has a phone on file, and falls back to email
-// if SMS isn't possible or fails. Never throws: delivery problems are logged
-// but must not change the response the caller sees (see requestReset).
 async function deliverCode(user, code) {
   const resetUrl = `${env.appUrl}/reset-password?subdomain=${encodeURIComponent(user.tenantSubdomain)}&email=${encodeURIComponent(user.email)}`;
   let delivered = false;
@@ -53,9 +46,6 @@ async function deliverCode(user, code) {
     });
     delivered = result.success;
   }
-
-  // Same dev-only escape hatch smsOtp.js uses: with no provider configured
-  // at all, log the code so the flow is testable locally. Never in production.
   const noProviderConfigured = !smsProviderService.isConfigured() && !emailService.isConfigured();
   if (!delivered && env.nodeEnv !== 'production' && noProviderConfigured) {
     logger.info('[DEV ONLY] No SMS/email provider configured — logging password reset code for testing', { userId: user.id, code });
@@ -64,9 +54,6 @@ async function deliverCode(user, code) {
   }
 }
 
-// Always resolves with no information about whether the account exists,
-// was throttled, or the code was delivered — otherwise this endpoint would
-// let anyone probe which emails/subdomains are registered.
 async function requestReset({ subdomain, email }) {
   const user = await findActiveUser(subdomain, email);
   if (!user) return;
@@ -78,7 +65,6 @@ async function requestReset({ subdomain, email }) {
 
   const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
   await prisma.$transaction([
-    // A newly requested code supersedes any earlier one still outstanding.
     prisma.passwordReset.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } }),
     prisma.passwordReset.create({
       data: {
@@ -90,8 +76,6 @@ async function requestReset({ subdomain, email }) {
     }),
   ]);
 
-  // Delivery runs after the response is decided so timing doesn't reveal
-  // whether the account existed.
   deliverCode({ ...user, tenantSubdomain: subdomain }, code).catch((err) =>
     logger.error('Password reset delivery crashed', { userId: user.id, message: err.message })
   );
@@ -109,9 +93,6 @@ async function confirmReset({ subdomain, email, code, newPassword }) {
   });
   if (!reset) throw invalid();
 
-  // Increment first, check the returned value: the increment is atomic, so
-  // parallel guesses can't all slip under the limit the way a
-  // read-then-write check would allow.
   const counted = await prisma.passwordReset.update({ where: { id: reset.id }, data: { attempts: { increment: 1 } } });
   if (counted.attempts > MAX_ATTEMPTS) throw invalid();
 
@@ -120,8 +101,6 @@ async function confirmReset({ subdomain, email, code, newPassword }) {
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
 
-  // Run inside the user's tenant context so the audit-log write is scoped to
-  // the right tenant the same way an authenticated request's would be.
   await runWithTenant(user.tenantId, () =>
     prisma.$transaction(async (tx) => {
       await tx.user.update({

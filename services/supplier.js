@@ -2,9 +2,6 @@ import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
-// tenantId is never passed explicitly — the tenant-scoping Prisma extension
-// injects it from the request context, same as location.service.js.
-
 const supplierInclude = { _count: { select: { purchaseOrders: true } } };
 
 async function createSupplier({ name, contactEmail, contactPhone }) {
@@ -34,7 +31,7 @@ async function getSupplierById(id) {
 }
 
 async function updateSupplier(id, updates) {
-  await getSupplierById(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getSupplierById(id); 
   return prisma.supplier.update({ where: { id }, data: updates, include: supplierInclude });
 }
 

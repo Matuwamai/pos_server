@@ -2,9 +2,6 @@ import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
-// tenantId is never passed explicitly — the tenant-scoping Prisma extension
-// injects it from the request context, same as location.service.js.
-
 const categoryInclude = {
   parent: { select: { id: true, name: true } },
   _count: { select: { children: true, products: true } },
@@ -51,7 +48,7 @@ async function getCategoryById(id) {
 }
 
 async function updateCategory(id, updates) {
-  await getCategoryById(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getCategoryById(id); 
   if (updates.parentId) {
     await assertParentBelongsToTenant(updates.parentId, id);
   }
@@ -74,9 +71,6 @@ async function reactivateCategory(id) {
   return prisma.category.update({ where: { id }, data: { isActive: true } });
 }
 
-// Used by the product CSV importer: a category column with a name that
-// doesn't exist yet shouldn't force the whole import to fail, so it's
-// created on the fly instead.
 async function findOrCreateByName(name) {
   if (!name) return null;
   const existing = await prisma.category.findFirst({ where: { name } });

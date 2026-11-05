@@ -8,15 +8,6 @@ const itemInclude = {
   location: { select: { id: true, name: true } },
 };
 
-// The single place every stock-affecting operation in the system goes
-// through — manual adjustments, purchase order receiving, stock transfers.
-// Writes the append-only InventoryLog entry and updates the InventoryItem
-// snapshot in the same transaction, so the two can never drift apart.
-// `increment` (not a read-then-set) keeps the actual write atomic under
-// concurrent calls; the negative-stock guard is a best-effort check against
-// the last-read quantity, not a hard row lock — acceptable for a single
-// till/location's normal transaction volume, not bulletproof under heavy
-// concurrent writes to the same row.
 async function applyInventoryChange(tx, { variantId, locationId, changeQty, reason, referenceId, allowNegative = false }) {
   const item = await tx.inventoryItem.findUnique({ where: { variantId_locationId: { variantId, locationId } } });
   if (!item) {
@@ -56,12 +47,7 @@ async function listInventory({ search, locationId, variantId, lowStockOnly, page
       : {}),
   };
 
-  // A "quantity <= lowStockThreshold" filter compares two columns, which
-  // Prisma's `where` can't express directly (short of $queryRaw, which
-  // would bypass the tenant-scoping extension entirely). Since a single
-  // tenant's inventory rows are a modest, bounded set, it's fetched in full
-  // and filtered/paginated in memory for this one case rather than reaching
-  // for raw SQL.
+
   if (lowStockOnly) {
     const all = await prisma.inventoryItem.findMany({ where, include: itemInclude, orderBy: { updatedAt: 'desc' } });
     const filtered = all.filter((item) => item.lowStockThreshold !== null && Number(item.quantity) <= Number(item.lowStockThreshold));
@@ -89,7 +75,7 @@ async function getInventoryItemById(id) {
 }
 
 async function updateLowStockThreshold(id, lowStockThreshold) {
-  await getInventoryItemById(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getInventoryItemById(id); 
   return prisma.inventoryItem.update({ where: { id }, data: { lowStockThreshold } });
 }
 

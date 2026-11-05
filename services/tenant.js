@@ -3,12 +3,6 @@ import ApiError from '../utils/ApiError.js';
 import roleService from './role.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
  
-// NOTE ON AUTH: these operations are platform-admin actions that span
-// tenants — they are NOT protected by the normal `authenticate` middleware
-// (which resolves a single req.tenantId from a tenant-scoped JWT). Routes
-// using this service need a separate super-admin auth check. See
-// tenant.routes.js for a placeholder middleware and a note on replacing it.
- 
 async function createTenant({ name, subdomain, plan }) {
   const existing = await prisma.tenant.findUnique({ where: { subdomain } });
   if (existing) {
@@ -21,18 +15,9 @@ async function createTenant({ name, subdomain, plan }) {
     const tenant = await tx.tenant.create({
       data: { name, subdomain, plan: planCode },
     });
-
-    // Every tenant gets a default location so onboarding never leaves a
-    // tenant in a state where it has no location to attach products/orders
-    // to. Businesses can rename or add more locations later.
     await tx.location.create({
       data: { tenantId: tenant.id, name: 'Main Location' },
     });
-
-    // Also required so authenticate.js's billing check doesn't lock this
-    // tenant out before it has any real billing set up — mirrors the
-    // self-signup flow in auth.service.js. A super admin can move it off
-    // the trial period via the billing webhook/service once it's paying.
     await tx.subscription.create({
       data: {
         tenantId: tenant.id,
@@ -41,10 +26,6 @@ async function createTenant({ name, subdomain, plan }) {
         currentPeriodEnd: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
       },
     });
-
-    // Seeded even though there's no owner user yet (this path never
-    // creates one, see the note above) — so the roles already exist
-    // whenever one is eventually added.
     await roleService.seedDefaultRolesForTenant(tx, tenant.id);
 
     return tenant;
@@ -63,9 +44,7 @@ async function getTenantById(id) {
   if (!tenant) throw ApiError.notFound('Tenant not found');
   return tenant;
 }
- 
-// Fetch-many with search (name OR subdomain, case-insensitive), optional
-// status/plan filters, and pagination.
+
 async function listTenants({ search, status, plan, page, limit, sortBy, sortOrder }) {
   const where = {
     ...(status ? { status } : {}),
@@ -92,7 +71,7 @@ async function listTenants({ search, status, plan, page, limit, sortBy, sortOrde
 }
  
 async function updateTenant(id, updates) {
-  await getTenantById(id); // ensures it exists, 404s otherwise
+  await getTenantById(id); 
   return prisma.tenant.update({ where: { id }, data: updates });
 }
  
@@ -104,8 +83,7 @@ async function suspendTenant(id, reason) {
   if (tenant.status === 'CANCELLED') {
     throw ApiError.conflict('Cannot suspend a cancelled tenant');
   }
-  // `reason` is accepted for audit logging at the controller/route level;
-  // the Tenant row itself only tracks current status, not history.
+
   return prisma.tenant.update({ where: { id }, data: { status: 'SUSPENDED' } });
 }
  
@@ -125,10 +103,6 @@ async function cancelTenant(id, reason) {
   if (tenant.status === 'CANCELLED') {
     throw ApiError.conflict('Tenant is already cancelled');
   }
-  // Cancellation is terminal and deliberately does NOT delete any data —
-  // orders/payments/customers must survive for financial/legal record
-  // keeping even after a business leaves the platform. There is no hard
-  // delete endpoint for tenants for this reason.
   return prisma.tenant.update({ where: { id }, data: { status: 'CANCELLED' } });
 }
  

@@ -8,10 +8,6 @@ function generateRawKey() {
   return `pk_${crypto.randomBytes(24).toString('hex')}`;
 }
 
-// A fast, deterministic hash (not bcrypt) is appropriate here — unlike a
-// password, an API key is high-entropy and machine-generated, so there's no
-// dictionary-attack risk to slow down; every authenticated request needs a
-// cheap lookup instead.
 function hashKey(rawKey) {
   return crypto.createHash('sha256').update(rawKey).digest('hex');
 }
@@ -27,12 +23,6 @@ function serialize(apiKey) {
   return { ...rest, permissions: permissions.map((p) => p.permission) };
 }
 
-// The raw key is returned exactly once, at creation — only its hash and a
-// short identifying prefix are ever persisted, same principle as a password.
-// `callerPermissions` (the creating user's own current permission set) caps
-// what the key can be granted — nobody can hand out more reach through an
-// API key than they themselves currently have, which would otherwise be a
-// straightforward privilege-escalation path.
 async function createApiKey(actingUser, callerPermissions, { name, permissionCodes, expiresAt }) {
   const codes = permissionCodes || [];
   const permissions = await prisma.permission.findMany({ where: { code: { in: codes } } });
@@ -80,11 +70,6 @@ async function revokeApiKey(id) {
   return prisma.apiKey.update({ where: { id }, data: { isActive: false } });
 }
 
-// Called by authenticateApiKey — deliberately not going through the
-// tenant-scoping extension (there's no tenant context yet; resolving one
-// IS the point) — hashes the presented key and looks it up by its globally
-// unique hash directly, same bootstrapping shape as auth.service.js's
-// login resolving a tenant by subdomain before any context exists.
 async function findByRawKey(rawKey) {
   const keyHash = hashKey(rawKey);
   return prisma.apiKey.findUnique({

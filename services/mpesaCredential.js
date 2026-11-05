@@ -2,9 +2,6 @@ import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import encryption from '../utils/encryption.js';
 
-// Per-tenant Daraja app credentials — never returned to a client once
-// saved (see services/tenantSelf.js, which only ever exposes whether a
-// credential exists and which environment it's for).
 async function upsertCredential(tenantId, { consumerKey, consumerSecret, passkey, environment }) {
   const data = {
     environment,
@@ -23,9 +20,6 @@ async function removeCredential(tenantId) {
   await prisma.mpesaCredential.deleteMany({ where: { tenantId } });
 }
 
-// Throws badRequest (not notFound — from the caller's point of view this
-// is "STK push isn't configured yet", a normal/expected state) if the
-// tenant hasn't set anything up.
 async function getDecryptedCredential(tenantId) {
   const row = await prisma.mpesaCredential.findUnique({ where: { tenantId } });
   if (!row) throw ApiError.badRequest("M-Pesa prompts aren't set up for this business yet");

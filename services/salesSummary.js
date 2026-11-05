@@ -1,22 +1,10 @@
 import prisma from '../config/prismaClient.js';
 import { getTenantId } from '../config/tenantContext.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
-
-// Buckets a moment into the location's own calendar day rather than UTC, so
-// a late-night sale lands on the day staff actually experienced it. Stored
-// as a UTC-midnight Date representing that calendar day — the column is
-// DATE-typed, so time-of-day is dropped regardless; this just avoids
-// server-local-time Date parsing shifting which day it lands on.
 function getLocalDateKey(when, timeZone) {
   const dateString = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(when);
   return new Date(`${dateString}T00:00:00.000Z`);
 }
-
-// DailySalesSummary's unique key is a 3-column compound (tenantId,
-// locationId, date), which — unlike a plain tenantId filter — the
-// tenant-scoping extension can't complete on its own, since Prisma requires
-// every field of a compound unique spelled out in that nested object. Read
-// explicitly from ALS instead, same reasoning as payment.js.
 async function applySalesForOrder(tx, { locationId, timezone, subtotal, discountTotal, taxTotal, total, itemCount }) {
   const tenantId = getTenantId();
   const date = getLocalDateKey(new Date(), timezone);
@@ -46,10 +34,6 @@ async function applySalesForOrder(tx, { locationId, timezone, subtotal, discount
     },
   });
 }
-
-// Booked against the day the refund happened, not the original sale date —
-// a closed day's summary never changes after the fact, and "today's net"
-// reflects today's actual cash movement.
 async function applyRefundForOrder(tx, { locationId, timezone, refundAmount }) {
   const tenantId = getTenantId();
   const date = getLocalDateKey(new Date(), timezone);
@@ -93,8 +77,6 @@ async function listSummaries({ locationId, dateFrom, dateTo, page, limit }) {
   return { data: summaries, pagination: buildPaginationMeta({ page, limit, total }) };
 }
 
-// Sums the whole matching range into one object — the "total sales this
-// month" dashboard need, as opposed to listSummaries' day-by-day rows.
 async function getTotals({ locationId, dateFrom, dateTo }) {
   const where = buildRangeWhere({ locationId, dateFrom, dateTo });
 

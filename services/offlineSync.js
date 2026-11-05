@@ -8,15 +8,12 @@ import orderService from './order.js';
 import { getCurrencyDecimalDigits } from '../config/currencies.js';
 import { round } from '../utils/money.js';
 
-// The till prices and taxes a sale itself, offline. The server does not
-// reprice it: it checks the arithmetic is internally consistent, records the
-// terminal's snapshot, and flags anything that oversold stock.
 
 const uuid = z.string().uuid();
 const money = z.coerce.number().nonnegative();
 
 const ORDER_PAYLOAD = z.object({
-  id: uuid, // the client-generated Order id — the idempotency anchor for the sale
+  id: uuid,
   locationId: uuid,
   cashierId: uuid,
   cashDrawerSessionId: uuid.optional(),
@@ -35,15 +32,6 @@ const ORDER_PAYLOAD = z.object({
       })
     )
     .min(1),
-  // Unlike validations/order.js's discountInput (where `amount` can be left
-  // out and computed server-side from the promotion), `amount` stays
-  // required here: the till already priced this sale locally — including
-  // any promo-code discount, previewed before the cashier applied it — so
-  // the server has a concrete number to arithmetic-check against, same as
-  // every other field in this payload. `promotionCode`, when present, is
-  // used to re-validate the promotion is *still* active/in-window at the
-  // moment this op is actually processed (which may be well after the
-  // cashier applied it offline), not to (re)compute the amount.
   discounts: z
     .array(z.object({ promotionCode: z.string().optional(), amount: z.coerce.number().positive(), reason: z.string().max(255).optional() }))
     .default([]),
@@ -75,19 +63,13 @@ const ORDER_PAYLOAD = z.object({
 const DRAWER_OPEN = z.object({ id: uuid, locationId: uuid, cashierId: uuid, openingFloat: money, openedAt: z.coerce.date() });
 const DRAWER_CLOSE = z.object({ id: uuid, cashierId: uuid, closingCash: money, closedAt: z.coerce.date() });
 
-// Customer creation is the one non-sale write a till needs while offline-first:
-// the device token can only reach `sync.pull`/`sync.push` (middlewares/authenticateTerminal.js),
-// not `POST /customers`, so this goes through the same op pipeline as a sale rather than
-// widening what a bare device credential can do.
 const CUSTOMER_CREATE = z.object({
-  id: uuid, // client-generated — the cashier needs the real id back immediately to attach it to the sale in progress
+  id: uuid, 
   name: z.string().min(1).max(255),
   phone: z.string().max(30).optional(),
   email: z.string().email().max(255).optional(),
 });
 
-// Thrown when an opId's sale already exists under another opId, so the
-// caller can return the original result rather than a rejection.
 class DuplicateSale extends Error {
   constructor(orderId) {
     super('duplicate sale');
@@ -127,9 +109,6 @@ async function importOfflineOrder(tx, terminal, payload) {
   const tenant = await tx.tenant.findUnique({ where: { id: terminal.tenantId }, select: { currency: true } });
   const tenantCurrency = tenant.currency;
   const decimalDigits = getCurrencyDecimalDigits(tenantCurrency);
-
-  // Arithmetic must be internally consistent: every line, the totals, and
-  // the payments. Anything else is a corrupted or tampered sale.
   let subtotal = 0;
   let taxTotal = 0;
   for (const item of p.items) {
@@ -196,8 +175,6 @@ async function importOfflineOrder(tx, terminal, payload) {
     }
 
     if (variant.product.trackInventory) {
-      // A till can sell a product that was never stocked at this location;
-      // the row is created at zero rather than rejecting the sale.
       await tx.inventoryItem.upsert({
         where: { variantId_locationId: { variantId: variant.id, locationId: p.locationId } },
         update: {},
@@ -218,13 +195,6 @@ async function importOfflineOrder(tx, terminal, payload) {
   }
 
   for (const d of p.discounts) {
-    // Re-validates a promo code against *current* server state (it may have
-    // been deactivated or expired since the cashier applied it offline) and
-    // enforces the same manager/owner gate on manual discounts the online
-    // path already has — neither was checked server-side for offline sales
-    // before this. The till's own pre-computed `amount` is kept as-is
-    // (resolveDiscountInput only recomputes when amount is omitted, which
-    // never happens in this payload).
     const { promotionId, amount, reason } = await orderService.resolveDiscountInput(tx, {
       discountInput: d,
       subtotal,
@@ -243,10 +213,7 @@ async function importOfflineOrder(tx, terminal, payload) {
   }
 
   for (const pay of p.payments) {
-    // Same STORE_CREDIT/GIFT_CARD balance check + decrement the online path
-    // uses, inside this same per-op transaction — the actual protection
-    // against double-spending a card across two offline tills, since each
-    // sync op reads the balance fresh right before deciding.
+
     await orderService.createPaymentWithSideEffects(tx, { payment: pay, orderId: order.id, customerId: p.customerId, tenantCurrency });
   }
 
@@ -305,8 +272,6 @@ async function closeDrawer(tx, terminal, payload) {
 async function createCustomerOp(tx, terminal, payload) {
   const p = parsePayload(CUSTOMER_CREATE, payload);
   if (await tx.customer.findUnique({ where: { id: p.id } })) {
-    // Same shape as DuplicateSale below, but a plain return is enough here — there's
-    // no separate "which op created it" lookup needed, the id itself is the answer.
     return { customerId: p.id };
   }
   const customer = await tx.customer.create({ data: { id: p.id, name: p.name, phone: p.phone, email: p.email } });
@@ -324,9 +289,6 @@ function storedOutcome(row) {
   return { opId: row.opId, status: row.status === 'CREATED' ? 'DUPLICATE' : 'REJECTED', result: row.result };
 }
 
-// Each op is applied in its own transaction together with its SyncOp record,
-// so a crash can never leave a sale applied without its replay record. Ops
-// are independent: one rejected op does not stop the rest of the batch.
 async function pushOps(terminal, ops) {
   const outcomes = [];
   for (const op of ops) {
@@ -361,11 +323,10 @@ async function pushOps(terminal, ops) {
         const rejected = await prisma.syncOp.create({ data: { terminalId: terminal.id, opId: op.opId, type: op.type, status: 'REJECTED', result } });
         outcomes.push(storedOutcome(rejected));
       } else if (err.code === 'P2002') {
-        // Two copies of the same op raced; the loser sees the winner's record.
         const winner = await prisma.syncOp.findFirst({ where: { opId: op.opId } });
         outcomes.push(winner ? storedOutcome(winner) : { opId: op.opId, status: 'REJECTED', result: { error: 'Conflicting upload, retry' } });
       } else {
-        throw err; // unexpected: let the whole push fail so the till retries later
+        throw err; 
       }
     }
   }

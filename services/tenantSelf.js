@@ -5,10 +5,6 @@ import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import mpesaCredentialService from './mpesaCredential.js';
 
-// Tenant has no tenantId column of its own, so it's NOT one of the
-// auto-scoped models in config/prismaClient.js — every query here filters
-// explicitly by id, always sourced from the caller's req.tenantId (off the
-// verified JWT), never a client-supplied id.
 
 const UPLOADS_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'uploads');
 

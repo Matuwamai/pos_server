@@ -4,8 +4,6 @@ import locationService from './location.js';
 import terminalService from './terminal.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 
-// tenantId is never passed explicitly — the tenant-scoping Prisma extension
-// injects it from the request context, same as location.service.js.
 
 async function openSession({ locationId, terminalId, openingFloat }, openedByUserId) {
   await locationService.getLocationById(locationId); // 404s if missing or belongs to another tenant
@@ -26,8 +24,6 @@ async function openSession({ locationId, terminalId, openingFloat }, openedByUse
       throw ApiError.conflict('This terminal already has an open cash drawer session');
     }
   } else {
-    // No terminal specified — still guard against opening two untracked
-    // sessions on the same location at once.
     const alreadyOpen = await prisma.cashDrawerSession.findFirst({
       where: { locationId, terminalId: null, status: 'OPEN' },
     });
@@ -69,14 +65,6 @@ async function listSessions({ locationId, terminalId, status, page, limit }) {
   };
 }
 
-// Sums CASH payments recorded against orders rung up under this session.
-// Payment has no tenantId of its own (see schema), so this isn't
-// auto-scoped by the tenant extension — but session.id was already
-// resolved through getSessionById, which IS tenant-scoped, so restricting
-// to this one session's orders is sufficient on its own.
-// Returns openingFloat (i.e. zero net sales) until the orders/payments
-// business logic exists, and becomes accurate automatically once it does —
-// nothing here will need to change when that ships.
 async function computeExpectedCash(session) {
   const result = await prisma.payment.aggregate({
     where: { method: 'CASH', order: { cashDrawerSessionId: session.id } },

@@ -8,12 +8,9 @@ import smsOtpService from './smsOtp.js';
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 const MFA_TOKEN_EXPIRES_IN = '10m';
-const TRIAL_LENGTH_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const TRIAL_LENGTH_MS = 14 * 24 * 60 * 60 * 1000; 
 
 function signToken(user) {
-  // `type: 'tenant_user'` mirrors the super-admin token's `type` claim —
-  // keeps the two token kinds from being interchangeable even if a secret
-  // were ever shared by mistake.
   return jwt.sign(
     { sub: user.id, tenantId: user.tenantId, role: user.role, type: 'tenant_user' },
     JWT_SECRET,
@@ -21,10 +18,6 @@ function signToken(user) {
   );
 }
 
-// A short-lived, single-purpose token identifying "this user passed
-// password auth and is mid-MFA-challenge" — never usable as a real session
-// token (authenticate.js only accepts type 'tenant_user'), so it can be
-// handed back to the client without granting any access on its own.
 function signMfaToken(user) {
   return jwt.sign({ sub: user.id, type: 'mfa_pending' }, JWT_SECRET, { expiresIn: MFA_TOKEN_EXPIRES_IN });
 }
@@ -59,10 +52,6 @@ async function signup({ tenantName, subdomain, currency, ownerName, ownerEmail, 
       data: { tenantId: tenant.id, name: 'Main Location' },
     });
 
-    // Every tenant needs a Subscription row for authenticate.js's billing
-    // check to pass at all — without one, a brand-new tenant would be
-    // locked out before ever using the product. billingProvider stays
-    // 'none' until a real provider is wired up (see services/subscription.js).
     await tx.subscription.create({
       data: {
         tenantId: tenant.id,
@@ -72,9 +61,7 @@ async function signup({ tenantName, subdomain, currency, ownerName, ownerEmail, 
       },
     });
 
-    // Seeds the 5 default roles (config/defaultRolePermissions.js) for this
-    // tenant so the owner has a real, editable Role from day one instead of
-    // only ever having the legacy enum value.
+  
     const roleIdByName = await roleService.seedDefaultRolesForTenant(tx, tenant.id);
 
     const owner = await tx.user.create({
@@ -149,7 +136,7 @@ async function resendLoginOtp({ mfaToken }) {
 }
 
 function sanitize(user) {
-  const { passwordHash, ...safe } = user; // eslint-disable-line no-unused-vars
+  const { passwordHash, ...safe } = user; 
   return safe;
 }
 

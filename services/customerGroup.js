@@ -2,9 +2,6 @@ import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
-// tenantId is never passed explicitly — the tenant-scoping Prisma extension
-// injects it from the request context, same as location.service.js.
-
 async function createCustomerGroup({ name, discountPercentage }) {
   return prisma.customerGroup.create({ data: { name, discountPercentage } });
 }
@@ -35,7 +32,7 @@ async function getCustomerGroupById(id) {
 }
 
 async function updateCustomerGroup(id, updates) {
-  await getCustomerGroupById(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getCustomerGroupById(id); 
   return prisma.customerGroup.update({ where: { id }, data: updates });
 }
 

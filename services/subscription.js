@@ -1,12 +1,6 @@
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 
-// Called from the billing webhook (controllers/billing.js) in response to
-// provider events. Never called mid-request from a tenant's own session —
-// there's no ALS tenant context here, so every call must address the row by
-// tenantId explicitly (the tenant-scoping Prisma extension only auto-scopes
-// when a context is set; see config/prismaClient.js).
-
 async function getByTenantId(tenantId) {
   const subscription = await prisma.subscription.findUnique({ where: { tenantId } });
   if (!subscription) throw ApiError.notFound('No subscription found for this tenant');

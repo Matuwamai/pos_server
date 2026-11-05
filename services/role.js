@@ -8,20 +8,12 @@ const roleInclude = {
   _count: { select: { users: true } },
 };
 
-// The join table wraps each permission in a RolePermission row — flatten
-// that into a plain array for API consumers, same treatment product.js
-// gives its modifierGroups.
 function serializeRole(role) {
   if (!role) return role;
   const { permissions, ...rest } = role;
   return { ...rest, permissions: permissions.map((rp) => rp.permission) };
 }
 
-// Called once, inside the same transaction that creates a tenant (signup or
-// admin-provisioning) — there's no ALS tenant context yet at that point, so
-// tenantId is taken explicitly rather than relying on the scoping
-// extension. Returns { [roleName]: roleId } so the caller can assign the
-// new OWNER user to the right one.
 async function seedDefaultRolesForTenant(tx, tenantId) {
   const allPermissions = await tx.permission.findMany({ select: { id: true, code: true } });
   const permissionIdByCode = new Map(allPermissions.map((p) => [p.code, p.id]));
@@ -33,7 +25,7 @@ async function seedDefaultRolesForTenant(tx, tenantId) {
 
     const permissionRows = codes
       .map((code) => permissionIdByCode.get(code))
-      .filter(Boolean) // tolerates a code listed here that hasn't been seeded into Permission yet
+      .filter(Boolean) 
       .map((permissionId) => ({ roleId: role.id, permissionId }));
 
     if (permissionRows.length > 0) {
@@ -88,7 +80,7 @@ async function getRoleRaw(id) {
 }
 
 async function updateRole(id, { name, permissionCodes }) {
-  await getRoleRaw(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getRoleRaw(id);
   if (name) {
     await assertNameAvailable(name, id);
   }

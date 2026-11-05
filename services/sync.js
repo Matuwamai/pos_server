@@ -3,11 +3,6 @@ import locationService from './location.js';
 
 const DEFAULT_LIMIT = 500;
 
-
-// Each catalog type is pulled independently, ordered by updatedAt. If a type
-// fills its page, the cursor for the whole response is pulled back to that
-// type's last timestamp, so nothing it skipped is lost. Rows at the boundary
-// are returned again next time — clients upsert, so that is harmless.
 const ENTITY_QUERIES = {
   locations: { model: 'location', where: () => ({}), select: { id: true, name: true, timezone: true, isActive: true, updatedAt: true } },
   categories: { model: 'category', where: () => ({}), select: { id: true, name: true, parentId: true, isActive: true, updatedAt: true } },
@@ -39,9 +34,6 @@ const ENTITY_QUERIES = {
     select: { id: true, customerGroupId: true, name: true, phone: true, email: true, storeCreditBalance: true, isActive: true, updatedAt: true },
   },
 };
-
-// Stock is only meaningful for the terminal's own location, so it is scoped
-// to one locationId rather than the whole tenant.
 function inventoryQuery(locationId) {
   return {
     model: 'inventoryItem',
@@ -53,20 +45,12 @@ function inventoryQuery(locationId) {
 async function pullChanges({ since, locationId, limit = DEFAULT_LIMIT }) {
   const location = await locationService.getLocationById(locationId); // 404s if missing/foreign tenant
   const sinceDate = new Date(since);
-  // Captured before any query runs, so a row written while we read is still
-  // picked up by the next pull (its updatedAt is at or after this moment).
   const serverTime = Date.now();
 
   const queries = { ...ENTITY_QUERIES, inventory: inventoryQuery(location.id) };
   const entities = {};
   let nextSince = serverTime;
   let hasMore = false;
-
-  // Singleton, not a list — a till needs its own tenant's name/logo for printed and
-  // on-screen receipts, available offline once synced at least once (Phase 3).
-  // Always sent (not filtered by sinceDate): it's one row, not worth a "changed since"
-  // dance, and the desktop client decides for itself whether the logo needs
-  // re-downloading by comparing updatedAt against what it already cached.
   const tenant = await prisma.tenant.findUnique({
     where: { id: location.tenantId },
     select: {
@@ -85,10 +69,6 @@ async function pullChanges({ since, locationId, limit = DEFAULT_LIMIT }) {
   } else {
     entities.tenant = null;
   }
-
-  // Staff roster for offline PIN login. The PIN is sent as its bcrypt hash
-  // (verified on the till) and permissions are resolved here, so the till
-  // enforces the same access the server would. Password hashes never leave.
   const userRows = await prisma.user.findMany({
     where: { isActive: true, updatedAt: { gte: sinceDate } },
     select: {
@@ -129,9 +109,6 @@ async function pullChanges({ since, locationId, limit = DEFAULT_LIMIT }) {
 
   return { serverTime, nextSince, hasMore, limit, entities };
 }
-
-// Decimals serialise as strings from Prisma; the terminal should get plain
-// numbers for money and quantities, and ISO strings for dates.
 function normalise(row) {
   const out = {};
   for (const [k, v] of Object.entries(row)) {

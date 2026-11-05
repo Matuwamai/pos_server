@@ -1,10 +1,6 @@
 import env from '../config/env.js';
 import logger from '../config/logger.js';
 
-// Called directly via fetch rather than the official `africastalking` SDK —
-// that package pulls in a badly outdated, vulnerable axios (dozens of CVEs)
-// plus vulnerable lodash/joi transitively. The API itself is a single plain
-// REST endpoint, not worth that dependency surface for.
 const BASE_URL = 'https://api.africastalking.com/version1/messaging';
 const SANDBOX_BASE_URL = 'https://api.sandbox.africastalking.com/version1/messaging';
 
@@ -12,10 +8,6 @@ function isConfigured() {
   return Boolean(env.africastalking.apiKey && env.africastalking.username);
 }
 
-// Returns { success, providerMessageId, cost, failureReason }. Never
-// throws — a failed/unconfigured send is a normal, expected outcome the
-// caller (services/smsOtp.js, etc.) records on the SmsMessage row rather
-// than something that should abort the request that triggered it.
 async function sendSms({ phone, message }) {
   if (!isConfigured()) {
     logger.warn("Africa's Talking is not configured — SMS not actually sent", { phone });
@@ -60,7 +52,6 @@ async function sendSms({ phone, message }) {
   }
 }
 
-// Africa's Talking returns cost as a string like "KES 0.8000".
 function parseCost(costString) {
   if (!costString) return null;
   const match = costString.match(/[\d.]+/);

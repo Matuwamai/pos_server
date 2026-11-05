@@ -15,30 +15,17 @@ const productInclude = {
           name: true,
           minSelect: true,
           maxSelect: true,
-          // A consumer (e.g. the POS cashier screen) needs the actual
-          // selectable modifiers, not just the group's name/limits, to
-          // render the picker at all.
           modifiers: { where: { isActive: true }, select: { id: true, name: true, priceAdjustment: true } },
         },
       },
     },
   },
 };
-
-// The join table wraps each modifier group in a ProductModifierGroup row —
-// flatten that into a plain array of groups for API consumers.
 function serializeProduct(product) {
   if (!product) return product;
   const { modifierGroups, ...rest } = product;
   return { ...rest, modifierGroups: modifierGroups.map((pmg) => pmg.modifierGroup) };
 }
-
-// Provisions a zero-quantity InventoryItem at every active location for each
-// given variant — but only when the product actually tracks inventory.
-// Keeping products and stock *counts* decoupled (no quantity is ever taken
-// as input here) while still guaranteeing every tracked variant has a row
-// per location up front, so nothing downstream (orders, adjustments,
-// low-stock checks) has to treat "no InventoryItem yet" as a special case.
 async function provisionInventory(tx, variantIds, trackInventory) {
   if (!trackInventory || variantIds.length === 0) return;
   const locations = await tx.location.findMany({ where: { isActive: true }, select: { id: true } });
@@ -75,9 +62,6 @@ async function createProduct({ categoryId, name, description, isComposite, track
 }
 
 async function listProducts({ search, categoryId, page, limit }) {
-  // A cashier's search box doubles as the barcode-scan input (a scanner just
-  // types the code + Enter), so it needs to hit variant sku/barcode too, not
-  // just the product's own name/description.
   const where = {
     isActive: true,
     ...(categoryId ? { categoryId } : {}),
@@ -109,10 +93,6 @@ async function getProductById(id) {
   if (!product) throw ApiError.notFound('Product not found');
   return serializeProduct(product);
 }
-
-// Internal, unscoped-response variant used where callers just need to
-// confirm a product exists and get its trackInventory flag cheaply,
-// without paying for the full variants/modifierGroups include.
 async function getProductRaw(id) {
   const product = await prisma.product.findUnique({ where: { id } });
   if (!product) throw ApiError.notFound('Product not found');
@@ -120,7 +100,7 @@ async function getProductRaw(id) {
 }
 
 async function updateProduct(id, updates) {
-  await getProductRaw(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getProductRaw(id); 
   if (updates.categoryId) {
     await categoryService.getCategoryById(updates.categoryId);
   }
@@ -146,7 +126,7 @@ async function reactivateProduct(id) {
 
 async function attachModifierGroup(productId, modifierGroupId) {
   await getProductRaw(productId);
-  await modifierGroupService.getModifierGroupById(modifierGroupId); // 404s if missing/foreign tenant
+  await modifierGroupService.getModifierGroupById(modifierGroupId); 
 
   const existing = await prisma.productModifierGroup.findUnique({
     where: { productId_modifierGroupId: { productId, modifierGroupId } },
@@ -155,8 +135,6 @@ async function attachModifierGroup(productId, modifierGroupId) {
     throw ApiError.conflict('This modifier group is already attached to this product');
   }
 
-  // Join rows have no updatedAt of their own, so the product itself is touched
-  // — that's what makes the attach visible to a terminal's next sync pull.
   await prisma.$transaction([
     prisma.productModifierGroup.create({ data: { productId, modifierGroupId } }),
     prisma.product.update({ where: { id: productId }, data: { updatedAt: new Date() } }),

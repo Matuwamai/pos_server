@@ -3,9 +3,6 @@ import ApiError from '../utils/ApiError.js';
 import customerGroupService from './customerGroup.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
-// tenantId is never passed explicitly — the tenant-scoping Prisma extension
-// injects it from the request context, same as location.service.js.
-
 const customerInclude = {
   customerGroup: { select: { id: true, name: true, discountPercentage: true } },
   _count: { select: { orders: true } },
@@ -52,7 +49,7 @@ async function getCustomerById(id) {
 }
 
 async function updateCustomer(id, updates) {
-  await getCustomerById(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getCustomerById(id); 
   if (updates.customerGroupId) {
     await assertGroupBelongsToTenant(updates.customerGroupId);
   }

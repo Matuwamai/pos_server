@@ -12,10 +12,6 @@ const RESEND_COOLDOWN_MS = 30 * 1000; // 30 seconds between issues for the same 
 function generateCode() {
   return crypto.randomInt(0, 1_000_000).toString().padStart(OTP_LENGTH, '0');
 }
-
-// Called pre-authentication (no ALS tenant context exists yet during
-// login), so tenantId is always taken explicitly from the caller — same
-// reasoning as every other pre-auth write in auth.service.js.
 async function issueOtp(user, eventType = 'OTP') {
   if (!user.phone) {
     throw ApiError.badRequest('This account has no phone number on file for MFA');
@@ -35,14 +31,6 @@ async function issueOtp(user, eventType = 'OTP') {
 
   const message = `Your verification code is ${code}. It expires in 5 minutes.`;
   const result = await smsProviderService.sendSms({ phone: user.phone, message });
-
-  // Without this, enabling MFA before real credentials are connected would
-  // be a one-way trip to a locked account: login itself would fail before
-  // ever issuing a JWT, so there'd be no way to log back in and turn MFA
-  // off again. Non-production only, and only when the provider genuinely
-  // isn't configured (a real send failure in prod still fails loudly below)
-  // — logging a live OTP code is a real exception to "never log secrets",
-  // justified only for local/dev testing of this exact flow.
   const devFallback = env.nodeEnv !== 'production' && !smsProviderService.isConfigured();
   if (devFallback) {
     logger.info('[DEV ONLY] SMS provider not configured — logging OTP for testing', { userId: user.id, code });
@@ -67,8 +55,6 @@ async function issueOtp(user, eventType = 'OTP') {
     },
   });
 
-  // A silent send failure would otherwise leave the user stuck entering a
-  // code that was never delivered, with no way to know why.
   if (!result.success && !devFallback) {
     throw ApiError.badRequest('Could not send the verification code — please try again shortly', {
       reason: result.failureReason,

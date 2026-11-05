@@ -8,17 +8,13 @@ const shiftInclude = {
   location: { select: { id: true, name: true } },
 };
 
-// employeeShifts.readAll doubles as "privileged for shift management" —
-// covers viewing anyone's shifts and clocking someone else out (e.g. a
-// manager closing out a forgotten clock-out). Not split into a separate
-// clockOutAny code to avoid multiplying near-duplicate permissions for one
-// small edge case.
+
 function isPrivileged(permissions) {
   return permissions.has('employeeShifts.readAll');
 }
 
 async function clockIn(actingUser, { locationId }) {
-  await locationService.getLocationById(locationId); // 404s if missing/foreign tenant
+  await locationService.getLocationById(locationId); 
 
   const openShift = await prisma.employeeShift.findFirst({ where: { userId: actingUser.id, clockOut: null } });
   if (openShift) {
@@ -62,11 +58,6 @@ async function getShiftById(id, actingUser, permissions) {
   }
   return shift;
 }
-
-// Someone without employeeShifts.readAll can only ever see their own shifts
-// — the userId filter is silently overridden rather than rejected, so "my
-// shifts" and "everyone's shifts" share one endpoint instead of needing a
-// separate self-service one.
 async function listShifts({ userId, locationId, activeOnly, page, limit }, actingUser, permissions) {
   const effectiveUserId = isPrivileged(permissions) ? userId : actingUser.id;
 

@@ -2,11 +2,6 @@ import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import modifierGroupService from './modifierGroup.js';
 
-// Modifier has no tenantId of its own — every lookup goes through its
-// parent ModifierGroup (which does), so cross-tenant access is blocked
-// transitively: getModifierGroupById 404s on a foreign-tenant group before
-// any Modifier row is ever touched.
-
 async function createModifier(modifierGroupId, { name, priceAdjustment }) {
   await modifierGroupService.getModifierGroupById(modifierGroupId);
   return prisma.modifier.create({ data: { modifierGroupId, name, priceAdjustment } });

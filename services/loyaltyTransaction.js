@@ -5,20 +5,14 @@ import loyaltyProgramService from './loyaltyProgram.js';
 import auditLogService from './auditLog.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 
-// There's no materialized points balance on Customer (unlike
-// storeCreditBalance) — it's always the sum of this ledger, computed here
-// rather than cached, since nothing else in the schema keeps a running
-// total in sync for it. Called both directly (GET /balance/:customerId) and
-// internally by earn/redeem/adjust, so it verifies ownership itself rather
-// than assuming a caller already did.
 async function getPointsBalance(customerId) {
-  await customerService.getCustomerById(customerId); // 404s if missing/foreign tenant
+  await customerService.getCustomerById(customerId); 
   const result = await prisma.loyaltyTransaction.aggregate({ where: { customerId }, _sum: { points: true } });
   return result._sum.points ?? 0;
 }
 
 async function assertProgramActive() {
-  const program = await loyaltyProgramService.getLoyaltyProgram(); // 404s if not configured
+  const program = await loyaltyProgramService.getLoyaltyProgram(); 
   if (!program.isActive) {
     throw ApiError.conflict('The loyalty program is not currently active');
   }
@@ -32,15 +26,11 @@ async function assertOrderBelongsToTenant(orderId) {
 
 async function earnPoints({ customerId, orderId, points }) {
   await assertProgramActive();
-  await customerService.getCustomerById(customerId); // 404s if missing/foreign tenant
+  await customerService.getCustomerById(customerId); 
   await assertOrderBelongsToTenant(orderId);
   return prisma.loyaltyTransaction.create({ data: { customerId, orderId, type: 'EARN', points } });
 }
 
-// Wrapped in a transaction so the balance check and the write happen
-// together, same best-effort tradeoff as inventory's applyInventoryChange:
-// correct under normal usage, not a hard row lock against concurrent redeems
-// on the same customer.
 async function redeemPoints({ customerId, orderId, points }) {
   await assertProgramActive();
   await customerService.getCustomerById(customerId);

@@ -3,10 +3,6 @@ import ApiError from '../utils/ApiError.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 import smsTemplateService from './smsTemplate.js';
 
-// Creates a DRAFT campaign only — this codebase has no background
-// job/scheduler infrastructure, so there is nothing yet that walks
-// `filters`/`selectedRecipients` and actually sends the messages. That
-// execution step is intentionally left for when a job runner exists.
 async function createCampaign(actingUser, { name, templateId, recipientMode, filters, selectedRecipients, scheduledFor }) {
   await smsTemplateService.getSmsTemplateById(templateId); // 404s if missing/foreign tenant
 

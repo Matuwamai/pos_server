@@ -22,11 +22,6 @@ function assertUsable(giftCard) {
   if (giftCard.expiresAt && giftCard.expiresAt < new Date()) throw ApiError.conflict('This gift card has expired');
 }
 
-// Same shape as storeCreditTransaction's applyStoreCreditChange: updates the
-// GiftCard.currentBalance snapshot and writes the ledger row (with
-// balanceAfter as a point-in-time audit snapshot) in one transaction.
-// GiftCardTransaction has no tenantId of its own — giftCard was already
-// resolved through a tenant-scoped lookup before this is called.
 async function applyGiftCardChange(tx, { giftCard, type, amount, orderId }) {
   const newBalance = Number(giftCard.currentBalance) + amount;
   if (newBalance < 0) {
@@ -41,7 +36,7 @@ async function applyGiftCardChange(tx, { giftCard, type, amount, orderId }) {
 
 async function issueGiftCard({ code, initialBalance, issuedToCustomerId, expiresAt }) {
   if (issuedToCustomerId) {
-    await customerService.getCustomerById(issuedToCustomerId); // 404s if missing/foreign tenant
+    await customerService.getCustomerById(issuedToCustomerId);
   }
 
   const finalCode = code || generateCode();
@@ -106,8 +101,7 @@ async function reloadGiftCard({ code, amount }) {
   return prisma.$transaction((tx) => applyGiftCardChange(tx, { giftCard, type: 'RELOAD', amount }));
 }
 
-// Admin correction — deliberately bypasses the active/expiry checks that
-// gate redeem/reload, same reasoning as loyalty/store-credit adjustments.
+
 async function adjustGiftCard(id, amount, actingUser) {
   const giftCard = await getGiftCardById(id);
   return prisma.$transaction(async (tx) => {
@@ -136,7 +130,7 @@ async function reactivateGiftCard(id) {
 }
 
 async function listTransactions(giftCardId) {
-  await getGiftCardById(giftCardId); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getGiftCardById(giftCardId); 
   return prisma.giftCardTransaction.findMany({ where: { giftCardId }, orderBy: { createdAt: 'desc' } });
 }
 

@@ -16,13 +16,6 @@ import { getTenantId } from '../config/tenantContext.js';
 import { getCurrencyDecimalDigits } from '../config/currencies.js';
 import { round } from '../utils/money.js';
 
-// Scope note: orders are built client-side (a till app manages its own cart)
-// and submitted here as one finished sale — there's no server-side OPEN
-// cart to incrementally edit, and no separate "void" endpoint. Cancelling a
-// completed sale goes through refundOrder() for every item instead, since
-// that already does the one thing void would need to duplicate: restock
-// inventory and reverse payments.
-
 const orderInclude = {
   location: { select: { id: true, name: true, timezone: true } },
   terminal: { select: { id: true, name: true } },
@@ -52,10 +45,6 @@ async function resolveDefaultTaxRate() {
   }
 }
 
-// Validates a variant/modifiers selection and prices one line item.
-// Modifiers must belong to a ModifierGroup actually attached to the
-// product being sold — otherwise any modifier from any product could be
-// tacked onto any sale.
 async function priceAndValidateItem(tx, { variantId, quantity, modifierIds }, defaultTaxRate, decimalDigits) {
   const variant = await tx.productVariant.findUnique({ where: { id: variantId }, include: { product: true, taxRate: true } });
   if (!variant) throw ApiError.notFound(`Variant ${variantId} not found`);
@@ -84,11 +73,6 @@ async function priceAndValidateItem(tx, { variantId, quantity, modifierIds }, de
   return { variant, quantity, unitPrice, lineSubtotal, taxAmount, lineTotal, modifierRows };
 }
 
-// A composite product (e.g. a Latte) deducts its bill-of-materials
-// components instead of its own stock; everything else deducts itself
-// directly. Products with trackInventory off are skipped entirely — same
-// rule product creation already uses to decide whether to provision
-// InventoryItem rows in the first place.
 async function deductInventoryForSale(tx, { variant, quantity, locationId, orderId }) {
   if (!variant.product.trackInventory) return;
 
@@ -141,15 +125,6 @@ async function restockInventoryForRefund(tx, { variant, quantity, locationId, re
   }
 }
 
-// Shared with services/offlineSync.js's importOfflineOrder, so the online
-// (POST /orders) and offline-sync order-creation paths enforce identical
-// promotion/gift-card/store-credit/loyalty rules from exactly one place
-// rather than two copies that could drift.
-
-// Resolves one discount input to a concrete {promotionId, amount, reason} —
-// pricing/validation only, not the DB write, since the two call sites write
-// discount rows slightly differently (bulk createMany with a grouped audit
-// log vs. one row at a time with a per-row audit log).
 async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser, customerId, decimalDigits }) {
   let promotionId = null;
   let amount = discountInput.amount;
@@ -166,12 +141,6 @@ async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser, c
       else throw ApiError.badRequest('A BOGO promotion requires an explicit discount amount');
     }
   } else if (discountInput.loyaltyPointsRedeemed) {
-    // Redeeming points for a dollar-off is a discount, not a tender —
-    // PaymentMethod has no points option, and this avoids a migration. The
-    // balance check below runs inside the caller's transaction (same as
-    // loyaltyTransactionService.redeemPoints, just inlined here) so it
-    // stays atomic with the rest of order creation; the actual ledger row
-    // is written by the caller once order.id exists (see createOrder).
     if (!customerId) throw ApiError.badRequest('A customer is required to redeem loyalty points');
     const program = await tx.loyaltyProgram.findFirst();
     if (!program || !program.isActive) {
@@ -186,22 +155,13 @@ async function resolveDiscountInput(tx, { discountInput, subtotal, actingUser, c
     amount = round(points * Number(program.redemptionRate), decimalDigits);
     return { promotionId: null, amount, reason: `Redeemed ${points} loyalty points`, loyaltyPointsRedeemed: points };
   } else if (!['OWNER', 'MANAGER'].includes(actingUser.role)) {
-    // A promo-code/points discount is driven by something anyone can
-    // enter; a discount with neither is pure staff discretion, so it's
-    // gated.
     throw ApiError.forbidden('Only a manager can apply a manual discount');
   }
 
   return { promotionId, amount, reason: discountInput.reason };
 }
 
-// Creates the Payment row and, for STORE_CREDIT/GIFT_CARD, the matching
-// balance check + decrement — all inside the caller's transaction so the
-// balance read and the decrement can never race across two sales.
 async function createPaymentWithSideEffects(tx, { payment, orderId, customerId, tenantCurrency }) {
-  // M-Pesa fundamentally only operates in Kenyan Shillings — every client
-  // already hides the option unless the tenant's currency is KES, this is
-  // the server-side backstop against a stale/tampered client doing it anyway.
   if (payment.method === 'MPESA' && tenantCurrency !== 'KES') {
     throw ApiError.badRequest('M-Pesa is only available for businesses whose currency is KES');
   }
@@ -216,9 +176,6 @@ async function createPaymentWithSideEffects(tx, { payment, orderId, customerId, 
   }
 
   if (payment.method === 'GIFT_CARD') {
-    // Looked up via `tx` (not giftCardService.getCardByCode, which uses the
-    // plain client) so the balance check/decrement stays inside this same
-    // transaction.
     const giftCard = await tx.giftCard.findFirst({ where: { code: payment.giftCardCode } });
     if (!giftCard) throw ApiError.notFound('Gift card not found');
     giftCardService.assertUsable(giftCard);
@@ -226,9 +183,6 @@ async function createPaymentWithSideEffects(tx, { payment, orderId, customerId, 
   }
 }
 
-// Auto-earn on completion, if there's a customer and an active program. No
-// "pay with points" here — PaymentMethod has no such option; point
-// redemption stays a separate action via /loyalty-transactions/redeem.
 async function earnLoyaltyPoints(tx, { customerId, orderId, total }) {
   if (!customerId) return;
   const program = await tx.loyaltyProgram.findFirst();
@@ -300,9 +254,6 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
     if (total < 0) {
       throw ApiError.badRequest('Discounts cannot exceed the order subtotal plus tax');
     }
-
-    // Cash can overtender for change; other methods aren't checked against
-    // overpayment here to avoid rejecting reasonable rounding.
     const paymentsTotal = round(payments.reduce((sum, p) => sum + p.amount, 0), decimalDigits);
     if (paymentsTotal < total) {
       throw ApiError.badRequest(`Payments (${paymentsTotal}) do not cover the order total (${total})`);
@@ -423,12 +374,6 @@ async function refundOrder(id, actingUser, { items, reason, refundMethod, giftCa
   if (refundMethod === 'STORE_CREDIT' && !order.customerId) {
     throw ApiError.badRequest('A customer is required to refund to store credit');
   }
-
-  // A device (terminal) token has no req.user (authenticateTerminal.js sets it
-  // null) — the signed-in cashier's id travels in the request body instead
-  // (validations/order.js's processedByUserId), the same trust boundary
-  // services/offlineSync.js's assertCashier already relies on for cashierId.
-  // Re-validated here regardless of which path supplied actingUser.
   if (!actingUser?.id) throw ApiError.badRequest('A valid acting user is required to process a refund');
   const processor = await prisma.user.findUnique({ where: { id: actingUser.id } });
   if (!processor || !processor.isActive) throw ApiError.badRequest('processedByUserId is not an active user of this business');
@@ -452,8 +397,6 @@ async function refundOrder(id, actingUser, { items, reason, refundMethod, giftCa
       validated.push({ orderItemId, quantity, amount, variant });
       totalAmount += amount;
     }
-    // Uses the order's own currency snapshot, not the tenant's current one
-    // — correct even if currency-changing is ever allowed later.
     totalAmount = round(totalAmount, getCurrencyDecimalDigits(order.currency));
 
     const refund = await tx.refund.create({ data: { orderId: order.id, processedByUserId: actingUser.id, reason, totalAmount } });
@@ -495,9 +438,6 @@ async function refundOrder(id, actingUser, { items, reason, refundMethod, giftCa
       if (!giftCard) throw ApiError.notFound('Gift card not found');
       await giftCardService.applyGiftCardChange(tx, { giftCard, type: 'RELOAD', amount: totalAmount, orderId: order.id });
     }
-
-    // Fully refunded once every item's cumulative refunded quantity meets
-    // what was actually sold on it.
     const allItems = await tx.orderItem.findMany({ where: { orderId: order.id } });
     let fullyRefunded = true;
     for (const item of allItems) {

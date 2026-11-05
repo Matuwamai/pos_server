@@ -4,11 +4,6 @@ import { getTenantId } from '../config/tenantContext.js';
 import auditLogService from './auditLog.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 
-// Payment has no tenantId of its own — a line item reachable only via its
-// parent Order, same shape as OrderItem — so the tenant-scoping Prisma
-// extension can't auto-scope it. Every query here filters through the
-// Order relation by hand instead of relying on that safety net.
-
 const paymentInclude = {
   order: { select: { id: true, orderNumber: true, locationId: true, customerId: true, status: true } },
 };
@@ -47,12 +42,6 @@ async function getPaymentById(id) {
   if (!payment) throw ApiError.notFound('Payment not found');
   return payment;
 }
-
-// A manual reconciliation lever for when an automatic capture/webhook never
-// updates a payment correctly (or updates it wrong) — corrects only THIS
-// record's status. Deliberately doesn't cascade into inventory, loyalty, or
-// any other ledger; a payment that actually needs the sale unwound belongs
-// in orderService.refundOrder, which already handles those effects properly.
 async function updatePaymentStatus(id, { status, note }, actingUser) {
   const payment = await getPaymentById(id);
   if (payment.status === status) {

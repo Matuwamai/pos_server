@@ -2,9 +2,6 @@ import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import { getPagination, buildPaginationMeta, searchFilter } from '../utils/queryHelpers.js';
 
-// tenantId is never passed explicitly — the tenant-scoping Prisma extension
-// injects it from the request context, same as location.service.js.
-
 const groupInclude = { _count: { select: { modifiers: true, products: true } } };
 
 async function createModifierGroup({ name, minSelect, maxSelect }) {
@@ -34,7 +31,7 @@ async function getModifierGroupById(id) {
 }
 
 async function updateModifierGroup(id, updates) {
-  await getModifierGroupById(id); // ensures it exists (and belongs to this tenant), 404s otherwise
+  await getModifierGroupById(id); 
   return prisma.modifierGroup.update({ where: { id }, data: updates, include: groupInclude });
 }
 

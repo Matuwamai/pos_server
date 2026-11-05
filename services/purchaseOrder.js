@@ -147,7 +147,7 @@ async function receiveItems(id, receivedItems) {
         changeQty: quantityReceived,
         reason: 'purchase_order',
         referenceId: po.id,
-        allowNegative: true, // receiving only ever increases stock
+        allowNegative: true, 
       });
     }
 

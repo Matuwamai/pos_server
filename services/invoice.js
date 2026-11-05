@@ -40,9 +40,9 @@ async function validateItemVariants(items) {
 }
 
 async function createInvoice(actingUser, { customerId, orderId, locationId, dueDate, discountTotal, notes, items }) {
-  await customerService.getCustomerById(customerId); // 404s if missing/foreign tenant
+  await customerService.getCustomerById(customerId); 
   if (locationId) {
-    await locationService.getLocationById(locationId); // 404s if missing/foreign tenant
+    await locationService.getLocationById(locationId); 
   }
   if (orderId) {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -124,8 +124,6 @@ async function updateInvoice(id, updates) {
 
   const { items, discountTotal, ...rest } = updates;
   const effectiveDiscountTotal = discountTotal !== undefined ? discountTotal : Number(invoice.discountTotal);
-  // Uses the invoice's own currency snapshot, not the tenant's current one
-  // — correct even if currency-changing is ever allowed later.
   const decimalDigits = getCurrencyDecimalDigits(invoice.currency);
 
   return prisma.$transaction(async (tx) => {
