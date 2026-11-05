@@ -4,11 +4,6 @@ import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import apiKeyService from '../services/apiKey.js';
 
-// Alternate entry point for third-party/integration access — no human user
-// or session, just a key scoped to whichever permissions were granted when
-// it was created. Anything gated by requirePermission works identically
-// regardless of whether the caller came through this or authenticate.js;
-// only req.user (absent here) vs req.apiKey differs.
 const authenticateApiKey = asyncHandler(async (req, res, next) => {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('ApiKey ')) {

@@ -6,10 +6,6 @@ function validate(schema) {
     try {
       if (schema.body) req.body = schema.body.parse(req.body);
       if (schema.params) req.params = schema.params.parse(req.params);
-      // req.query is a getter-only accessor in Express 5 (reassigning it
-      // throws), so the parsed/coerced/defaulted query goes on its own
-      // property instead. Controllers must read req.validatedQuery, not
-      // req.query, to get defaults like page/limit applied.
       if (schema.query) req.validatedQuery = schema.query.parse(req.query);
       return next();
     } catch (err) {
@@ -26,3 +22,4 @@ function validate(schema) {
 }
 
 export default validate;
+

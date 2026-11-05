@@ -2,12 +2,6 @@ import jwt from 'jsonwebtoken';
 import ApiError from '../utils/ApiError.js';
  
 const JWT_SECRET = process.env.SUPER_ADMIN_JWT_SECRET;
- 
-// Verifies a super-admin-issued JWT (obtained via POST /admin/admins/login).
-// Checked against a SEPARATE secret from tenant-user JWTs
-// (SUPER_ADMIN_JWT_SECRET vs JWT_SECRET) — a compromised tenant token can
-// never be replayed here, and vice versa, even if someone forgot the
-// `type` claim check below.
 function requireSuperAdmin(req, res, next) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {

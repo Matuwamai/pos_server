@@ -2,10 +2,6 @@ import { rateLimit } from 'express-rate-limit';
 import env from '../config/env.js';
 import ApiError from '../utils/ApiError.js';
 
-// Per-IP throttles for the public (pre-authentication) endpoints — the
-// only thing between an anonymous client and unlimited password/code
-// guessing or signup spam. Routed through ApiError so the response shape
-// matches every other error the API returns.
 function limiter({ windowMs, max, message }) {
   return rateLimit({
     windowMs,

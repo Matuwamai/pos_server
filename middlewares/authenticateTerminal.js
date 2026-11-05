@@ -7,24 +7,12 @@ import authenticate from './authenticate.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// Terminal device tokens carry no user: a till's cashier is established
-// offline (PIN) and sent per-sale, so the device itself gets a fixed,
-// narrow permission set rather than a role.
 const TERMINAL_PERMISSIONS = new Set([
   'sync.pull', 'sync.push', 'paymentIntents.create', 'paymentIntents.read',
-  // Refund lookup/action (Phase 5) — deliberately NOT 'orders.create': a
-  // till's own sales must only ever reach the server via the offline-sync
-  // order.create outbox path, never this direct online route.
   'orders.list', 'orders.read', 'orders.refund',
-  // Lets a till preview a promo code's discount amount live before the
-  // cashier applies it — deliberately just this one promotions.* permission,
-  // not list/create/update/deactivate, which stay admin-only.
   'promotions.byCode',
 ]);
 
-// Device tokens are long-lived, so revocation is server-side: every request
-// re-checks the terminal row. Bumping tokenVersion (revoke) or deactivating
-// the terminal invalidates the token immediately.
 export const authenticateTerminal = asyncHandler(async (req, res, next) => {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) throw ApiError.unauthorized('Missing or malformed Authorization header');
@@ -58,9 +46,6 @@ export const authenticateTerminal = asyncHandler(async (req, res, next) => {
   req.permissions = TERMINAL_PERMISSIONS;
   runWithTenant(terminal.tenantId, next);
 });
-
-// /sync/pull serves both a till (device token) and the web app's own admin
-// tooling (user token), dispatching on the token's declared type.
 export const authenticateSyncClient = asyncHandler(async (req, res, next) => {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.split(' ')[1] : '';

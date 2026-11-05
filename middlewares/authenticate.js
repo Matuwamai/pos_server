@@ -5,19 +5,6 @@ import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
-
-// Verifies a tenant-user JWT (obtained via POST /api/v1/auth/login). Checked
-// against JWT_SECRET — a SEPARATE secret from SUPER_ADMIN_JWT_SECRET — so a
-// compromised tenant token can never be replayed against super-admin routes,
-// and vice versa, even without the `type` claim check below.
-//
-// Trusts tenantId/sub/role (the legacy enum) straight from the JWT, same
-// tradeoff requireSuperAdmin.js makes. But tenant status, subscription
-// standing, the user's own isActive flag, and — new here — permissions are
-// ALL re-derived from the database on every request in one query: a
-// suspended tenant, a lapsed subscription, a deactivated user, or a
-// permission an owner just revoked all need to take effect immediately,
-// not just at next login.
 const authenticate = asyncHandler(async (req, res, next) => {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
@@ -63,19 +50,9 @@ const authenticate = asyncHandler(async (req, res, next) => {
   if (!user.isActive) {
     throw ApiError.unauthorized('This user account is no longer active');
   }
-
-  // A password change/reset signs out every session issued before it, so a
-  // stolen or forgotten-open session doesn't survive the owner recovering
-  // their account. JWT `iat` is whole seconds, hence the floored comparison
-  // (a token minted in the same second as the change stays valid).
   if (user.passwordChangedAt && payload.iat * 1000 < Math.floor(user.passwordChangedAt.getTime() / 1000) * 1000) {
     throw ApiError.unauthorized('Your password was changed — please sign in again');
   }
-
-  // An admin-set (or admin-reset) password is only a temporary hand-off:
-  // until the user picks their own, the only things they may do are read
-  // their own profile and change the password. Enforced here rather than
-  // only in the web UI so the API itself can't be used around it.
   if (user.mustChangePassword) {
     const path = req.originalUrl.split('?')[0];
     const allowed =
@@ -85,11 +62,6 @@ const authenticate = asyncHandler(async (req, res, next) => {
       throw new ApiError(403, 'You must change your password before continuing', { code: 'PASSWORD_CHANGE_REQUIRED' });
     }
   }
-
-  // The webhook (services/subscription.js) is the primary way this stays
-  // current; currentPeriodEnd is checked here too as a fallback for a
-  // missed/delayed webhook, so a lapsed period can never grant access just
-  // because the provider hasn't told us yet.
   const subscription = user.tenant.subscription;
   const billingOk =
     subscription &&
@@ -100,10 +72,6 @@ const authenticate = asyncHandler(async (req, res, next) => {
       code: 'SUBSCRIPTION_EXPIRED',
     });
   }
-
-  // Empty until the user is assigned a dynamic Role (or if that role gets
-  // deactivated) — harmless today since no route checks req.permissions
-  // yet, see middlewares/requirePermission.js.
   const permissions =
     user.assignedRole && user.assignedRole.isActive
       ? new Set(user.assignedRole.permissions.map((rp) => rp.permission.code))
