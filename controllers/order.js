@@ -17,9 +17,6 @@ const getById = asyncHandler(async (req, res) => {
 });
 
 const refund = asyncHandler(async (req, res) => {
-  // req.user is null for a device (terminal) token — the signed-in cashier's id
-  // comes from the body instead (see services/order.js's refundOrder, which
-  // validates it regardless of where it came from).
   const actingUser = req.user ?? { id: req.body.processedByUserId };
   const order = await orderService.refundOrder(req.params.id, actingUser, req.body);
   res.status(201).json(order);

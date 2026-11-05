@@ -10,8 +10,6 @@ const pull = asyncHandler(async (req, res) => {
   const result = await syncService.pullChanges({ ...req.validatedQuery, locationId });
   res.status(200).json(result);
 });
-
-// Pushes come only from a device, so every op is attributed to that terminal.
 const push = asyncHandler(async (req, res) => {
   const terminal = await prisma.terminal.findUnique({ where: { id: req.terminal.id } });
   const results = await offlineSyncService.pushOps(terminal, req.body.ops);
