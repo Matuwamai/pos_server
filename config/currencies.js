@@ -1,19 +1,8 @@
-// Canonical ISO 4217 currency list. This is the server's authoritative source for
-// both rounding math (how many decimal places an amount actually has) and signup
-// validation — desktop's CurrencyInfo table is manually kept in sync with this list
-// (no shared codegen across the JS/C#/Dart codebases in this project).
-//
-// Deliberately excludes 3-decimal currencies (KWD, BHD, OMR, JOD, TND, LYD) — a
-// handful of countries, and supporting them properly needs real per-currency
-// decimal-digit awareness everywhere Decimal(10,2) is used today. Revisit only if a
-// customer actually needs one of these.
+
 const ZERO_DECIMAL_CODES = new Set([
   'BIF', 'CLP', 'DJF', 'GNF', 'ISK', 'JPY', 'KMF', 'KRW', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF',
 ]);
 
-// {code, name} — decimalDigits is derived below (2 unless listed in
-// ZERO_DECIMAL_CODES). Not exhaustive of every ISO 4217 code, but covers the
-// currencies of the large majority of the world's economies.
 const CURRENCIES = [
   { code: 'USD', name: 'US Dollar' },
   { code: 'EUR', name: 'Euro' },
@@ -83,8 +72,6 @@ const CURRENCIES = [
 ];
 
 const SUPPORTED_CURRENCIES = Object.freeze(
-  // De-dupe (a couple of codes above are listed twice by accident of grouping) and
-  // attach decimalDigits.
   [...new Map(CURRENCIES.map((c) => [c.code, c])).values()].map((c) => ({
     ...c,
     decimalDigits: ZERO_DECIMAL_CODES.has(c.code) ? 0 : 2,

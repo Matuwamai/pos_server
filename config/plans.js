@@ -1,8 +1,3 @@
-// Plan -> feature mapping, kept as code rather than a DB table: plans are a
-// product decision made by deploying new code, not data a super admin edits
-// at runtime (there's no admin UI for that, and adding one is unwarranted
-// until it's actually needed). Subscription.planCode is the only thing that
-// ties a tenant to one of these.
 const PLANS = {
   trial: {
     name: 'Trial',

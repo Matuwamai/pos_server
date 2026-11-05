@@ -1,44 +1,17 @@
-// The system-defined permission catalog — one entry per distinct action a
-// client can request, roughly one per route. This is the complete "menu" a
-// tenant assigns from when building or editing a Role; it is never created
-// or edited through the API, only seeded (scripts/seedPermissions.js).
-//
-// Deliberately excludes: super-admin routes (a separate, platform-level
-// auth system, not tenant-scoped), auth/signup/login (public), and the
-// billing webhook (its own stub auth) — none of those are gated by a
-// tenant user's permissions.
 const PERMISSIONS = [
-  // tenant self-service branding (name/logo shown in the app's own chrome
-  // and on printed receipts) — reading it isn't gated (every authenticated
-  // user of any role needs it for the topbar/sidebar), only changing it is.
   { code: 'tenant.branding.update', category: 'tenant', description: "Update the tenant's logo" },
-
-  // Same self-service shape as branding: every authenticated user needs to
-  // read the till/paybill number (it's shown at the point of sale so the
-  // cashier can tell the customer where to send M-Pesa payment), only
-  // changing it is gated.
   { code: 'tenant.payments.update', category: 'tenant', description: "Update the tenant's M-Pesa till/paybill number" },
-
-  // Offline terminal sync — pull the catalog down, push sales back up.
   { code: 'sync.pull', category: 'sync', description: 'Download catalog and stock changes for offline use' },
   { code: 'sync.push', category: 'sync', description: 'Upload offline sales and drawer events' },
-
-  // M-Pesa STK Push — each tenant's own Daraja credentials, configured
-  // once by an owner/manager; sending/polling a prompt is a normal till
-  // action, same trust level as ringing up a sale.
   { code: 'tenant.mpesaStk.update', category: 'tenant', description: "Configure the tenant's Daraja (M-Pesa STK push) credentials" },
   { code: 'paymentIntents.create', category: 'paymentIntents', description: 'Send an M-Pesa STK push prompt' },
   { code: 'paymentIntents.read', category: 'paymentIntents', description: 'Check the status of an M-Pesa STK push prompt' },
-
-  // locations
   { code: 'locations.list', category: 'locations', description: 'List locations' },
   { code: 'locations.read', category: 'locations', description: 'View a location' },
   { code: 'locations.create', category: 'locations', description: 'Create a location' },
   { code: 'locations.update', category: 'locations', description: 'Edit a location' },
   { code: 'locations.deactivate', category: 'locations', description: 'Deactivate a location' },
   { code: 'locations.reactivate', category: 'locations', description: 'Reactivate a location' },
-
-  // terminals
   { code: 'terminals.list', category: 'terminals', description: 'List terminals' },
   { code: 'terminals.read', category: 'terminals', description: 'View a terminal' },
   { code: 'terminals.create', category: 'terminals', description: 'Register a terminal' },
@@ -47,46 +20,34 @@ const PERMISSIONS = [
   { code: 'terminals.reactivate', category: 'terminals', description: 'Reactivate a terminal' },
   { code: 'terminals.heartbeat', category: 'terminals', description: 'Send a terminal heartbeat' },
   { code: 'terminals.enroll', category: 'terminals', description: 'Enroll or revoke a device token for offline sync' },
-
-  // cash drawer sessions
   { code: 'cashDrawerSessions.list', category: 'cashDrawerSessions', description: 'List cash drawer sessions' },
   { code: 'cashDrawerSessions.read', category: 'cashDrawerSessions', description: 'View a cash drawer session' },
   { code: 'cashDrawerSessions.create', category: 'cashDrawerSessions', description: 'Open a cash drawer session' },
   { code: 'cashDrawerSessions.close', category: 'cashDrawerSessions', description: 'Close a cash drawer session' },
-
-  // customer groups
   { code: 'customerGroups.list', category: 'customerGroups', description: 'List customer groups' },
   { code: 'customerGroups.read', category: 'customerGroups', description: 'View a customer group' },
   { code: 'customerGroups.create', category: 'customerGroups', description: 'Create a customer group' },
   { code: 'customerGroups.update', category: 'customerGroups', description: 'Edit a customer group' },
   { code: 'customerGroups.deactivate', category: 'customerGroups', description: 'Deactivate a customer group' },
   { code: 'customerGroups.reactivate', category: 'customerGroups', description: 'Reactivate a customer group' },
-
-  // customers
   { code: 'customers.list', category: 'customers', description: 'List customers' },
   { code: 'customers.read', category: 'customers', description: 'View a customer' },
   { code: 'customers.create', category: 'customers', description: 'Register a customer' },
   { code: 'customers.update', category: 'customers', description: 'Edit a customer' },
   { code: 'customers.deactivate', category: 'customers', description: 'Deactivate a customer' },
   { code: 'customers.reactivate', category: 'customers', description: 'Reactivate a customer' },
-
-  // suppliers
   { code: 'suppliers.list', category: 'suppliers', description: 'List suppliers' },
   { code: 'suppliers.read', category: 'suppliers', description: 'View a supplier' },
   { code: 'suppliers.create', category: 'suppliers', description: 'Create a supplier' },
   { code: 'suppliers.update', category: 'suppliers', description: 'Edit a supplier' },
   { code: 'suppliers.deactivate', category: 'suppliers', description: 'Deactivate a supplier' },
   { code: 'suppliers.reactivate', category: 'suppliers', description: 'Reactivate a supplier' },
-
-  // categories
   { code: 'categories.list', category: 'categories', description: 'List categories' },
   { code: 'categories.read', category: 'categories', description: 'View a category' },
   { code: 'categories.create', category: 'categories', description: 'Create a category' },
   { code: 'categories.update', category: 'categories', description: 'Edit a category' },
   { code: 'categories.deactivate', category: 'categories', description: 'Deactivate a category' },
   { code: 'categories.reactivate', category: 'categories', description: 'Reactivate a category' },
-
-  // modifier groups + modifiers
   { code: 'modifierGroups.list', category: 'modifierGroups', description: 'List modifier groups' },
   { code: 'modifierGroups.read', category: 'modifierGroups', description: 'View a modifier group' },
   { code: 'modifierGroups.create', category: 'modifierGroups', description: 'Create a modifier group' },
@@ -99,8 +60,6 @@ const PERMISSIONS = [
   { code: 'modifiers.update', category: 'modifierGroups', description: 'Edit a modifier' },
   { code: 'modifiers.deactivate', category: 'modifierGroups', description: 'Deactivate a modifier' },
   { code: 'modifiers.reactivate', category: 'modifierGroups', description: 'Reactivate a modifier' },
-
-  // products, variants, components
   { code: 'products.list', category: 'products', description: 'List products' },
   { code: 'products.read', category: 'products', description: 'View a product' },
   { code: 'products.create', category: 'products', description: 'Create a product' },
@@ -119,15 +78,11 @@ const PERMISSIONS = [
   { code: 'variants.components.list', category: 'products', description: 'List a variant\'s bill-of-materials components' },
   { code: 'variants.components.create', category: 'products', description: 'Add a bill-of-materials component' },
   { code: 'variants.components.delete', category: 'products', description: 'Remove a bill-of-materials component' },
-
-  // inventory
   { code: 'inventory.list', category: 'inventory', description: 'List inventory levels' },
   { code: 'inventory.read', category: 'inventory', description: 'View an inventory item' },
   { code: 'inventory.update', category: 'inventory', description: 'Edit an inventory item\'s low-stock threshold' },
   { code: 'inventory.adjust', category: 'inventory', description: 'Manually adjust stock quantity' },
   { code: 'inventory.logs.list', category: 'inventory', description: 'View the inventory change log' },
-
-  // purchase orders
   { code: 'purchaseOrders.list', category: 'purchaseOrders', description: 'List purchase orders' },
   { code: 'purchaseOrders.read', category: 'purchaseOrders', description: 'View a purchase order' },
   { code: 'purchaseOrders.create', category: 'purchaseOrders', description: 'Create a purchase order' },
@@ -135,16 +90,12 @@ const PERMISSIONS = [
   { code: 'purchaseOrders.markOrdered', category: 'purchaseOrders', description: 'Mark a purchase order as ordered' },
   { code: 'purchaseOrders.receive', category: 'purchaseOrders', description: 'Receive stock against a purchase order' },
   { code: 'purchaseOrders.cancel', category: 'purchaseOrders', description: 'Cancel a purchase order' },
-
-  // stock transfers
   { code: 'stockTransfers.list', category: 'stockTransfers', description: 'List stock transfers' },
   { code: 'stockTransfers.read', category: 'stockTransfers', description: 'View a stock transfer' },
   { code: 'stockTransfers.create', category: 'stockTransfers', description: 'Create a stock transfer' },
   { code: 'stockTransfers.markInTransit', category: 'stockTransfers', description: 'Mark a stock transfer in transit' },
   { code: 'stockTransfers.complete', category: 'stockTransfers', description: 'Complete a stock transfer' },
   { code: 'stockTransfers.cancel', category: 'stockTransfers', description: 'Cancel a stock transfer' },
-
-  // loyalty
   { code: 'loyaltyProgram.read', category: 'loyalty', description: 'View the loyalty program configuration' },
   { code: 'loyaltyProgram.create', category: 'loyalty', description: 'Configure the loyalty program' },
   { code: 'loyaltyProgram.update', category: 'loyalty', description: 'Edit the loyalty program configuration' },
@@ -153,14 +104,10 @@ const PERMISSIONS = [
   { code: 'loyaltyTransactions.earn', category: 'loyalty', description: 'Award loyalty points' },
   { code: 'loyaltyTransactions.redeem', category: 'loyalty', description: 'Redeem loyalty points' },
   { code: 'loyaltyTransactions.adjust', category: 'loyalty', description: 'Manually adjust a points balance' },
-
-  // store credit
   { code: 'storeCreditTransactions.list', category: 'storeCredit', description: 'List store credit transactions' },
   { code: 'storeCreditTransactions.issue', category: 'storeCredit', description: 'Issue store credit' },
   { code: 'storeCreditTransactions.redeem', category: 'storeCredit', description: 'Redeem store credit' },
   { code: 'storeCreditTransactions.adjust', category: 'storeCredit', description: 'Manually adjust a store credit balance' },
-
-  // gift cards
   { code: 'giftCards.list', category: 'giftCards', description: 'List gift cards' },
   { code: 'giftCards.read', category: 'giftCards', description: 'View a gift card' },
   { code: 'giftCards.create', category: 'giftCards', description: 'Issue a gift card' },
@@ -170,8 +117,6 @@ const PERMISSIONS = [
   { code: 'giftCards.deactivate', category: 'giftCards', description: 'Deactivate a gift card' },
   { code: 'giftCards.reactivate', category: 'giftCards', description: 'Reactivate a gift card' },
   { code: 'giftCards.transactions.list', category: 'giftCards', description: 'View a gift card\'s transaction history' },
-
-  // promotions
   { code: 'promotions.list', category: 'promotions', description: 'List promotions' },
   { code: 'promotions.read', category: 'promotions', description: 'View a promotion' },
   { code: 'promotions.byCode', category: 'promotions', description: 'Validate a promotion code' },
@@ -179,8 +124,6 @@ const PERMISSIONS = [
   { code: 'promotions.update', category: 'promotions', description: 'Edit a promotion' },
   { code: 'promotions.deactivate', category: 'promotions', description: 'Deactivate a promotion' },
   { code: 'promotions.reactivate', category: 'promotions', description: 'Reactivate a promotion' },
-
-  // tax rates
   { code: 'taxRates.list', category: 'taxRates', description: 'List tax rates' },
   { code: 'taxRates.read', category: 'taxRates', description: 'View a tax rate' },
   { code: 'taxRates.default', category: 'taxRates', description: 'View the default tax rate' },
@@ -188,28 +131,18 @@ const PERMISSIONS = [
   { code: 'taxRates.update', category: 'taxRates', description: 'Edit a tax rate' },
   { code: 'taxRates.deactivate', category: 'taxRates', description: 'Deactivate a tax rate' },
   { code: 'taxRates.reactivate', category: 'taxRates', description: 'Reactivate a tax rate' },
-
-  // orders
   { code: 'orders.list', category: 'orders', description: 'List orders' },
   { code: 'orders.read', category: 'orders', description: 'View an order' },
   { code: 'orders.create', category: 'orders', description: 'Ring up a sale' },
   { code: 'orders.refund', category: 'orders', description: 'Refund an order' },
-
-  // employee shifts
   { code: 'employeeShifts.clockIn', category: 'employeeShifts', description: 'Clock in' },
   { code: 'employeeShifts.clockOut', category: 'employeeShifts', description: 'Clock out' },
   { code: 'employeeShifts.readOwn', category: 'employeeShifts', description: 'View your own shifts' },
   { code: 'employeeShifts.readAll', category: 'employeeShifts', description: 'View any employee\'s shifts' },
-
-  // audit log
   { code: 'auditLogs.list', category: 'auditLogs', description: 'View the audit log' },
-
-  // payments
   { code: 'payments.list', category: 'payments', description: 'List payments across all orders' },
   { code: 'payments.read', category: 'payments', description: 'View a payment' },
   { code: 'payments.updateStatus', category: 'payments', description: 'Manually override a payment\'s status' },
-
-  // users (staff management)
   { code: 'users.list', category: 'users', description: 'List staff accounts' },
   { code: 'users.read', category: 'users', description: 'View a staff account' },
   { code: 'users.create', category: 'users', description: 'Create a staff account' },
@@ -217,8 +150,6 @@ const PERMISSIONS = [
   { code: 'users.deactivate', category: 'users', description: 'Deactivate a staff account' },
   { code: 'users.reactivate', category: 'users', description: 'Reactivate a staff account' },
   { code: 'users.resetPassword', category: 'users', description: 'Reset another staff member\'s password' },
-
-  // roles & permissions administration
   { code: 'roles.list', category: 'roles', description: 'List roles' },
   { code: 'roles.read', category: 'roles', description: 'View a role' },
   { code: 'roles.create', category: 'roles', description: 'Create a role' },
@@ -226,37 +157,25 @@ const PERMISSIONS = [
   { code: 'roles.deactivate', category: 'roles', description: 'Deactivate a role' },
   { code: 'roles.reactivate', category: 'roles', description: 'Reactivate a role' },
   { code: 'permissions.list', category: 'roles', description: 'List the permission catalog' },
-
-  // API keys
   { code: 'apiKeys.list', category: 'apiKeys', description: 'List API keys' },
   { code: 'apiKeys.create', category: 'apiKeys', description: 'Create an API key' },
   { code: 'apiKeys.revoke', category: 'apiKeys', description: 'Revoke an API key' },
-
-  // sales reporting
   { code: 'salesSummary.list', category: 'salesSummary', description: 'View daily sales summaries' },
   { code: 'salesSummary.totals', category: 'salesSummary', description: 'View aggregated sales totals for a date range' },
-
-  // SMS templates
   { code: 'smsTemplates.list', category: 'sms', description: 'List SMS templates' },
   { code: 'smsTemplates.read', category: 'sms', description: 'View an SMS template' },
   { code: 'smsTemplates.create', category: 'sms', description: 'Create an SMS template' },
   { code: 'smsTemplates.update', category: 'sms', description: 'Edit an SMS template' },
   { code: 'smsTemplates.deactivate', category: 'sms', description: 'Deactivate an SMS template' },
   { code: 'smsTemplates.reactivate', category: 'sms', description: 'Reactivate an SMS template' },
-
-  // SMS messages (send + history)
   { code: 'smsMessages.list', category: 'sms', description: 'View SMS message history' },
   { code: 'smsMessages.read', category: 'sms', description: 'View an SMS message' },
   { code: 'smsMessages.send', category: 'sms', description: 'Send a direct SMS message' },
-
-  // SMS campaigns
   { code: 'smsCampaigns.list', category: 'sms', description: 'List SMS campaigns' },
   { code: 'smsCampaigns.read', category: 'sms', description: 'View an SMS campaign' },
   { code: 'smsCampaigns.create', category: 'sms', description: 'Create an SMS campaign' },
   { code: 'smsCampaigns.update', category: 'sms', description: 'Edit a draft SMS campaign' },
   { code: 'smsCampaigns.cancel', category: 'sms', description: 'Cancel an SMS campaign' },
-
-  // invoices (bill-later sales, distinct from an immediate POS Order)
   { code: 'invoices.list', category: 'invoices', description: 'List invoices' },
   { code: 'invoices.read', category: 'invoices', description: 'View an invoice' },
   { code: 'invoices.create', category: 'invoices', description: 'Create a draft invoice' },
