@@ -1,8 +1,3 @@
-// Integration tests for redeeming loyalty points as a checkout discount
-// (Group B: loyalty points at checkout). Needs the same live test tenant as
-// tests/sync.test.js / tests/orderRefund.test.js:
-//   TEST_SUBDOMAIN, TEST_EMAIL, TEST_PASSWORD  (optional TEST_BASE_URL)
-// Without those they are skipped rather than failing.
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -44,18 +39,10 @@ describe('loyalty point redemption at checkout', { skip }, () => {
     customerId = (
       await call('POST', '/customers', { token: owner, body: { name: `Loyalty Test Customer ${randomUUID().slice(0, 6)}` } })
     ).body.id;
-
-    // Earlier offline-sync tests against this shared tenant have already
-    // sold this variant down to 0 — top it back up so the online sales
-    // below (which, unlike offline sync, reject an oversell) can go through.
     await call('POST', '/inventory/adjustments', {
       token: owner,
       body: { variantId, locationId, changeQty: 1000, reason: 'loyalty redemption test restock' },
     });
-
-    // Normalize the tenant's loyalty program to known, active rates — a
-    // fresh tenant has none yet (POST creates it); a tenant reused across
-    // test runs already has one (POST 409s, so PATCH it to the same state).
     const created = await call('POST', '/loyalty-program', { token: owner, body: { pointsPerCurrencyUnit: 1, redemptionRate: 0.01 } });
     if (created.status === 409) {
       await call('PATCH', '/loyalty-program', { token: owner, body: { pointsPerCurrencyUnit: 1, redemptionRate: 0.01, isActive: true } });
@@ -63,10 +50,6 @@ describe('loyalty point redemption at checkout', { skip }, () => {
     const program = (await call('GET', '/loyalty-program', { token: owner })).body;
     pointsPerCurrencyUnit = Number(program.pointsPerCurrencyUnit);
     redemptionRate = Number(program.redemptionRate);
-
-    // Seed a starting balance the ordinary way: one plain cash sale with the
-    // customer attached earns points automatically (services/order.js's
-    // earnLoyaltyPoints), same as any other sale.
     const seedSale = await call('POST', '/orders', {
       token: owner,
       body: { locationId, customerId, items: [{ variantId, quantity: 10 }], payments: [{ method: 'CASH', amount: 1000 }] },
@@ -95,10 +78,6 @@ describe('loyalty point redemption at checkout', { skip }, () => {
     assert.equal(Number(res.body.discountTotal), expectedDiscount);
     assert.equal(res.body.discounts[0].promotionId, null);
     assert.equal(res.body.discounts[0].reason, `Redeemed ${pointsToRedeem} loyalty points`);
-
-    // The same order also earns points on its own (post-discount) total —
-    // existing, unrelated behavior this redemption doesn't special-case, so
-    // the balance afterwards nets both ledger entries, not just the redeem.
     const pointsEarnedOnThisSale = Math.floor(Number(res.body.total) * pointsPerCurrencyUnit);
     assert.equal(await balance(), balanceBefore - pointsToRedeem + pointsEarnedOnThisSale);
   });
@@ -145,8 +124,6 @@ describe('loyalty point redemption at checkout', { skip }, () => {
       },
     });
     assert.equal(res.status, 409);
-    // Restore — the program is shared, tenant-wide state that other runs
-    // (and manual verification) rely on being active.
     await call('PATCH', '/loyalty-program', { token: owner, body: { isActive: true } });
   });
 });

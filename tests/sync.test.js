@@ -1,8 +1,3 @@
-// Integration tests for offline sync. They run against a live server and
-// database, so they need a test tenant (owner account) to log in with:
-//   TEST_SUBDOMAIN, TEST_EMAIL, TEST_PASSWORD  (optional TEST_BASE_URL)
-// Without those they are skipped rather than failing.
-//   TEST_SUBDOMAIN=... TEST_EMAIL=... TEST_PASSWORD=... npm test
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -211,10 +206,6 @@ describe('offline sync', { skip }, () => {
       body: { name: 'Plain Cashier', email: `cashier-${randomUUID()}@example.com`, password: 'TestPass123!', role: 'CASHIER' },
     });
     assert.equal(cashier.status, 201, JSON.stringify(cashier.body));
-    // A brand-new user always starts mustChangePassword:true — irrelevant to what
-    // this test is actually checking (the manager-only discount gate), so it's
-    // cleared directly rather than running a full change-password flow just to
-    // get a sellable cashier.
     await prisma.user.update({ where: { id: cashier.body.id }, data: { mustChangePassword: false } });
 
     const id = randomUUID();

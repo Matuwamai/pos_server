@@ -1,8 +1,3 @@
-// Integration tests for refunding an order from a device (terminal) token —
-// Phase 5's desktop refund feature. Needs the same test tenant as
-// tests/sync.test.js:
-//   TEST_SUBDOMAIN, TEST_EMAIL, TEST_PASSWORD  (optional TEST_BASE_URL)
-// Without those they are skipped rather than failing.
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -46,7 +41,6 @@ describe('order refund from a device token', { skip }, () => {
     const enrolled = await call('POST', `/terminals/${terminalId}/enroll-device`, { token: owner });
     device = enrolled.body.token;
 
-    // A sale to refund, pushed the same way the till itself would.
     const saleId = randomUUID();
     const sale = {
       id: saleId,

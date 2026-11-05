@@ -1,15 +1,3 @@
-// Integration tests for multi-currency support (Milestone 1): signup sets a
-// tenant's currency once, order/invoice rounding respects that currency's
-// decimal places, and M-Pesa is rejected for any non-KES tenant. Unlike the
-// other live-tenant suites, these tests sign up their own fresh tenants via
-// POST /auth/signup rather than depending on a pre-configured
-// TEST_SUBDOMAIN/TEST_EMAIL/TEST_PASSWORD tenant — so they run whenever the
-// server itself is reachable, no env vars required.
-//
-// Only two signups total (one JPY, one KES, shared across every test below
-// via `before`) — POST /auth/signup is rate-limited per IP
-// (middlewares/authRateLimit.js, 10/hour by default), so this suite stays
-// well under that even run several times in the same hour.
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -72,7 +60,7 @@ describe('multi-currency support', () => {
         ownerPassword: 'TestPass123!',
       },
     });
-    assert.equal(res.status, 422); // zod validation failure — see middlewares/validate.js
+    assert.equal(res.status, 422); 
   });
 
   test('a JPY (0-decimal) tenant rounds order totals to whole units, and GET /tenant reflects the currency', async () => {
@@ -89,9 +77,6 @@ describe('multi-currency support', () => {
     assert.equal(Number(order.body.subtotal), 1500);
     assert.equal(Number(order.body.total), 1500);
     assert.ok(!String(order.body.total).includes('.'), `expected a whole-unit total, got ${order.body.total}`);
-
-    // The receipt endpoint returns HTML, not JSON — call() always JSON-parses,
-    // so this one goes through fetch directly.
     const receiptRes = await fetch(`${BASE}/orders/${order.body.id}/receipt`, { headers: { Authorization: `Bearer ${jpy.token}` } });
     assert.equal(receiptRes.status, 200);
     const receiptHtml = await receiptRes.text();
@@ -125,8 +110,6 @@ describe('multi-currency support', () => {
 
     const intent = await call('POST', '/payment-intents', { token: jpy.token, body: { amount: 1000, phoneNumber: '254712345678' } });
     assert.equal(intent.status, 400);
-
-    // Configuring a shortcode at all is rejected too, not just using it.
     const settings = await call('PATCH', '/tenant/payments', { token: jpy.token, body: { mpesaType: 'TILL', mpesaShortcode: '174379' } });
     assert.equal(settings.status, 400);
   });

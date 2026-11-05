@@ -1,16 +1,7 @@
-// Unit tests for the pure logic (encryption, Daraja response mapping) run
-// unconditionally — no network or test tenant needed. The webhook
-// idempotency test is a lightweight DB-level integration test (inserts a
-// MpesaPaymentIntent row directly via Prisma, rather than going through a
-// real Daraja call, which would be slow/flaky/rate-limited in CI — see
-// services/mpesaDaraja.js's doc comment on the sandbox's observed rate
-// limit).
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 
-// A fixed, test-only key — unrelated to any real deployment's
-// DATA_ENCRYPTION_KEY, which must never appear in source control.
 process.env.DATA_ENCRYPTION_KEY ||= 'DWSlobNVd3a8VAO/7uYfP6PZnTbBsRiyEOui4kH8oI8=';
 
 const encryption = (await import('../utils/encryption.js')).default;
@@ -83,11 +74,6 @@ describe('M-Pesa Daraja response mapping', () => {
     }
   });
 
-  // Confirmed live against the real sandbox while building this: a prompt
-  // that hasn't been answered yet comes back as an HTTP-level error
-  // (errorCode set, no ResultCode), not a clean ResultCode — this must
-  // never be read as FAILED, or a cashier polling early would see a false
-  // negative.
   test('queryStkPushStatus maps the "still processing" error shape to PENDING, not FAILED', async () => {
     mockFetch(async (url) => {
       if (String(url).includes('oauth')) return new Response(JSON.stringify({ access_token: 'tok', expires_in: '3599' }), { status: 200 });
@@ -101,9 +87,6 @@ describe('M-Pesa Daraja response mapping', () => {
     }
   });
 
-  // Regression test: a real (non-sandbox) live test caught this returning
-  // FAILED instead of PENDING — Daraja signals "still processing" two
-  // different ways, not just the HTTP-error shape above.
   test('queryStkPushStatus maps ResultCode 4999 ("still under processing") to PENDING, not FAILED', async () => {
     mockFetch(async (url) => {
       if (String(url).includes('oauth')) return new Response(JSON.stringify({ access_token: 'tok', expires_in: '3599' }), { status: 200 });
@@ -117,8 +100,6 @@ describe('M-Pesa Daraja response mapping', () => {
     }
   });
 
-  // Confirmed live: Safaricom's sandbox also rate-limits stkpushquery with
-  // a plain HTTP 429 and no errorCode field at all — must also be PENDING.
   test('queryStkPushStatus maps a bare rate-limit response to PENDING', async () => {
     mockFetch(async (url) => {
       if (String(url).includes('oauth')) return new Response(JSON.stringify({ access_token: 'tok', expires_in: '3599' }), { status: 200 });
@@ -167,8 +148,6 @@ describe('M-Pesa Daraja response mapping', () => {
   });
 });
 
-// Integration: webhook idempotency, direct against the real dev DB/server.
-// Needs the same test tenant as tests/sync.test.js.
 const BASE = process.env.TEST_BASE_URL || 'http://localhost:4000/api/v1';
 const CONFIGURED = Boolean(process.env.TEST_SUBDOMAIN && process.env.TEST_EMAIL && process.env.TEST_PASSWORD);
 const skip = CONFIGURED ? false : 'set TEST_SUBDOMAIN, TEST_EMAIL and TEST_PASSWORD to run';
@@ -184,9 +163,6 @@ describe('M-Pesa STK webhook idempotency', { skip }, () => {
       body: JSON.stringify({ subdomain: process.env.TEST_SUBDOMAIN, email: process.env.TEST_EMAIL, password: process.env.TEST_PASSWORD }),
     })).json();
     assert.ok(login.token, 'test login must succeed');
-
-    // Decode the tenantId straight off the JWT payload rather than adding
-    // a /auth/me round trip just for this test.
     const tenantId = JSON.parse(Buffer.from(login.token.split('.')[1], 'base64url').toString()).tenantId;
 
     const intent = await prisma.mpesaPaymentIntent.create({
@@ -220,9 +196,6 @@ describe('M-Pesa STK webhook idempotency', { skip }, () => {
     const afterFirst = await prisma.mpesaPaymentIntent.findUnique({ where: { id: intent.id } });
     assert.equal(afterFirst.status, 'COMPLETED');
     assert.equal(afterFirst.mpesaReceiptNumber, 'QCX7Y8ZABC');
-
-    // Replay with a different (bogus) outcome — idempotency must mean this
-    // can never flip an already-resolved intent.
     const replayCallback = { Body: { stkCallback: { ResultCode: 1032, ResultDesc: 'Request cancelled by user' } } };
     const second = await fetch(`${BASE}/webhooks/mpesa/stk-callback/${intent.id}`, {
       method: 'POST',
