@@ -166,6 +166,22 @@ async function createPaymentWithSideEffects(tx, { payment, orderId, customerId, 
     throw ApiError.badRequest('M-Pesa is only available for businesses whose currency is KES');
   }
 
+  // Unlike MPESA above, this actually verifies the submitted transactionRef against a
+  // real webhook-confirmed intent rather than trusting the client outright — Stripe
+  // gives us a signature-verified COMPLETED row to check, so there's no reason not to.
+  if (payment.method === 'STRIPE') {
+    const intent = await tx.stripePaymentIntent.findFirst({
+      where: { id: payment.transactionRef, tenantId: getTenantId() },
+    });
+    if (!intent) throw ApiError.badRequest('Stripe payment intent not found');
+    if (intent.status !== 'COMPLETED') throw ApiError.badRequest('This Stripe payment has not completed yet');
+    if (intent.consumedByOrderId) throw ApiError.conflict('This Stripe payment has already been applied to an order');
+    if (Number(intent.amount) !== Number(payment.amount)) {
+      throw ApiError.badRequest('The Stripe payment amount does not match the amount being tendered');
+    }
+    await tx.stripePaymentIntent.update({ where: { id: intent.id }, data: { consumedByOrderId: orderId } });
+  }
+
   await tx.payment.create({
     data: { orderId, method: payment.method, amount: payment.amount, status: 'CAPTURED', transactionRef: payment.transactionRef },
   });

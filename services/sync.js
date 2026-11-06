@@ -61,11 +61,16 @@ async function pullChanges({ since, locationId, limit = DEFAULT_LIMIT }) {
       mpesaShortcode: true,
       updatedAt: true,
       mpesaCredential: { select: { id: true } },
+      stripeCredential: { select: { id: true } },
     },
   });
   if (tenant) {
-    const { mpesaCredential, ...tenantFields } = tenant;
-    entities.tenant = normalise({ ...tenantFields, mpesaStkConfigured: Boolean(mpesaCredential) });
+    const { mpesaCredential, stripeCredential, ...tenantFields } = tenant;
+    entities.tenant = normalise({
+      ...tenantFields,
+      mpesaStkConfigured: Boolean(mpesaCredential),
+      stripeConfigured: Boolean(stripeCredential),
+    });
   } else {
     entities.tenant = null;
   }
