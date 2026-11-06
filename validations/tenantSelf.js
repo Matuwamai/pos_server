@@ -21,4 +21,10 @@ const updateMpesaCredential = {
   }),
 };
 
-export default { updatePayments, updateMpesaCredential };
+const updateStripeCredential = {
+  body: z.object({
+    secretKey: z.string().min(1),
+  }),
+};
+
+export default { updatePayments, updateMpesaCredential, updateStripeCredential };

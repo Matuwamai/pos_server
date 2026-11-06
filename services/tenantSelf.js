@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import mpesaCredentialService from './mpesaCredential.js';
+import stripeCredentialService from './stripeCredential.js';
 
 
 const UPLOADS_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'uploads');
@@ -23,14 +24,20 @@ const SELF_FIELDS = {
   mpesaType: true,
   mpesaShortcode: true,
   mpesaCredential: { select: { environment: true } },
+  stripeCredential: { select: { id: true } },
 };
 
 // Never exposes the credential itself — only whether one exists and which
 // environment it targets, so the settings page can show a "configured"
 // state without the secrets ever round-tripping back to a client.
 function present(tenant) {
-  const { mpesaCredential, ...rest } = tenant;
-  return { ...rest, mpesaStkConfigured: Boolean(mpesaCredential), mpesaStkEnvironment: mpesaCredential?.environment ?? null };
+  const { mpesaCredential, stripeCredential, ...rest } = tenant;
+  return {
+    ...rest,
+    mpesaStkConfigured: Boolean(mpesaCredential),
+    mpesaStkEnvironment: mpesaCredential?.environment ?? null,
+    stripeConfigured: Boolean(stripeCredential),
+  };
 }
 
 async function getMyTenant(tenantId) {
@@ -101,6 +108,19 @@ async function removeMpesaCredential(tenantId) {
   return getMyTenant(tenantId);
 }
 
+// Stripe, unlike M-Pesa, has no currency restriction — it's offered to every tenant
+// with a key configured, regardless of tenant.currency (see config/stripeAmount.js for
+// how amounts get encoded correctly across currencies).
+async function updateStripeCredential(tenantId, { secretKey }) {
+  await stripeCredentialService.upsertCredential(tenantId, secretKey);
+  return getMyTenant(tenantId);
+}
+
+async function removeStripeCredential(tenantId) {
+  await stripeCredentialService.removeCredential(tenantId);
+  return getMyTenant(tenantId);
+}
+
 export default {
   getMyTenant,
   updateTenantLogo,
@@ -108,4 +128,6 @@ export default {
   updateTenantPayments,
   updateMpesaCredential,
   removeMpesaCredential,
+  updateStripeCredential,
+  removeStripeCredential,
 };

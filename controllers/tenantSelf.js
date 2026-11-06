@@ -33,4 +33,23 @@ const removeMpesaCredential = asyncHandler(async (req, res) => {
   res.status(200).json(tenant);
 });
 
-export default { getMine, updateLogo, removeLogo, updatePayments, updateMpesaCredential, removeMpesaCredential };
+const updateStripeCredential = asyncHandler(async (req, res) => {
+  const tenant = await tenantSelfService.updateStripeCredential(req.tenantId, req.body);
+  res.status(200).json(tenant);
+});
+
+const removeStripeCredential = asyncHandler(async (req, res) => {
+  const tenant = await tenantSelfService.removeStripeCredential(req.tenantId);
+  res.status(200).json(tenant);
+});
+
+export default {
+  getMine,
+  updateLogo,
+  removeLogo,
+  updatePayments,
+  updateMpesaCredential,
+  removeMpesaCredential,
+  updateStripeCredential,
+  removeStripeCredential,
+};

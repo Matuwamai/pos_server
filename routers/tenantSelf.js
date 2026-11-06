@@ -20,4 +20,7 @@ router.patch('/payments', requirePermission('tenant.payments.update'), validate(
 router.patch('/mpesa-credential', requirePermission('tenant.mpesaStk.update'), validate(tenantSelfValidation.updateMpesaCredential), tenantSelfController.updateMpesaCredential);
 router.delete('/mpesa-credential', requirePermission('tenant.mpesaStk.update'), tenantSelfController.removeMpesaCredential);
 
+router.patch('/stripe-credential', requirePermission('tenant.stripe.update'), validate(tenantSelfValidation.updateStripeCredential), tenantSelfController.updateStripeCredential);
+router.delete('/stripe-credential', requirePermission('tenant.stripe.update'), tenantSelfController.removeStripeCredential);
+
 export default router;
