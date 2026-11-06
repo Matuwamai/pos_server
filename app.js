@@ -22,6 +22,8 @@ import authRoutes from './routers/auth.js';
 import billingRoutes from './routers/billing.js';
 import mpesaWebhookRoutes from './routers/mpesaWebhook.js';
 import mpesaPaymentIntentRoutes from './routers/mpesaPaymentIntent.js';
+import stripeWebhookRoutes from './routers/stripeWebhook.js';
+import stripePaymentIntentRoutes from './routers/stripePaymentIntent.js';
 import locationRoutes from './routers/location.js';
 import terminalRoutes from './routers/terminal.js';
 import cashDrawerSessionRoutes from './routers/cashDrawerSession.js';
@@ -70,6 +72,11 @@ const app = express();
 
 app.use(helmet());
 app.use(cors());
+// Mounted ahead of express.json() below: this router parses its own body as a raw
+// Buffer (routers/stripeWebhook.js), which Stripe's signature verification requires —
+// once express.json() has consumed the body as a parsed object, the raw bytes needed
+// to check the signature are gone.
+app.use('/api/v1/webhooks', stripeWebhookRoutes);
 app.use(express.json());
 app.use(requestLogger);
 // Tenant-uploaded assets (currently just logos) — served before helmet's
@@ -83,6 +90,10 @@ app.use('/api/v1/super-admins', superAdminRoutes);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/webhooks', billingRoutes);
 app.use('/api/v1/webhooks', mpesaWebhookRoutes);
+// Mounted before the less-specific /payment-intents prefix below, so a request under
+// /payment-intents/stripe/* can never be swallowed by mpesaPaymentIntentRoutes's own
+// GET /:id falling through to match "stripe" as an id.
+app.use('/api/v1/payment-intents/stripe', stripePaymentIntentRoutes);
 app.use('/api/v1/payment-intents', mpesaPaymentIntentRoutes);
 app.use('/api/v1/locations', locationRoutes);
 app.use('/api/v1/terminals', terminalRoutes);
