@@ -22,6 +22,7 @@ model Tenant {
   subdomain            String                   @unique
   plan                 String                   @default("trial")
   currency             String                   @default("USD") @db.VarChar(3)
+  cashRoundingUnit     Decimal?                 @db.Decimal(10, 2)
   status               TenantStatus             @default(ACTIVE)
   logoUrl              String?
   mpesaType            MpesaShortcodeType?
@@ -767,26 +768,27 @@ model TaxRate {
 }
 
 model Order {
-  id                  String       @id @default(uuid())
-  tenantId            String
-  orderNumber         Int          @unique @default(autoincrement())
-  locationId          String
-  terminalId          String?
-  cashDrawerSessionId String?
-  userId              String
-  customerId          String?
-  channel             OrderChannel @default(POS)
-  source              OrderSource  @default(ONLINE)
-  terminalReceiptNo   String?
-  terminalCreatedAt   DateTime?
-  status              OrderStatus  @default(OPEN)
-  currency            String       @default("USD") @db.VarChar(3)
-  subtotal            Decimal      @db.Decimal(10, 2)
-  discountTotal       Decimal      @default(0) @db.Decimal(10, 2)
-  taxTotal            Decimal      @db.Decimal(10, 2)
-  total               Decimal      @db.Decimal(10, 2)
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  id                     String       @id @default(uuid())
+  tenantId               String
+  orderNumber            Int          @unique @default(autoincrement())
+  locationId             String
+  terminalId             String?
+  cashDrawerSessionId    String?
+  userId                 String
+  customerId             String?
+  channel                OrderChannel @default(POS)
+  source                 OrderSource  @default(ONLINE)
+  terminalReceiptNo      String?
+  terminalCreatedAt      DateTime?
+  status                 OrderStatus  @default(OPEN)
+  currency               String       @default("USD") @db.VarChar(3)
+  subtotal               Decimal      @db.Decimal(10, 2)
+  discountTotal          Decimal      @default(0) @db.Decimal(10, 2)
+  taxTotal               Decimal      @db.Decimal(10, 2)
+  cashRoundingAdjustment Decimal      @default(0) @db.Decimal(10, 2)
+  total                  Decimal      @db.Decimal(10, 2)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
 
   tenant            Tenant             @relation(fields: [tenantId], references: [id])
   location          Location           @relation(fields: [locationId], references: [id])
