@@ -75,6 +75,11 @@ async function generateReceiptHtml(orderId) {
     <tr><td>Subtotal</td><td class="num">${money(order.subtotal, decimalDigits)}</td></tr>
     <tr><td>Discount</td><td class="num">-${money(order.discountTotal, decimalDigits)}</td></tr>
     <tr><td>Tax</td><td class="num">${money(order.taxTotal, decimalDigits)}</td></tr>
+    ${(() => {
+      const adjustment = Number(order.cashRoundingAdjustment);
+      if (adjustment === 0) return '';
+      return `<tr><td>Rounding</td><td class="num">${adjustment > 0 ? '' : '-'}${money(Math.abs(adjustment), decimalDigits)}</td></tr>`;
+    })()}
     <tr class="grand"><td>Total</td><td class="num">${money(order.total, decimalDigits)}</td></tr>
   </table>
   <hr>

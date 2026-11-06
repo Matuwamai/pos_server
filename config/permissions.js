@@ -1,6 +1,6 @@
 const PERMISSIONS = [
   { code: 'tenant.branding.update', category: 'tenant', description: "Update the tenant's logo" },
-  { code: 'tenant.payments.update', category: 'tenant', description: "Update the tenant's M-Pesa till/paybill number" },
+  { code: 'tenant.payments.update', category: 'tenant', description: "Update the tenant's M-Pesa till/paybill number or cash-rounding setting" },
   { code: 'sync.pull', category: 'sync', description: 'Download catalog and stock changes for offline use' },
   { code: 'sync.push', category: 'sync', description: 'Upload offline sales and drawer events' },
   { code: 'tenant.mpesaStk.update', category: 'tenant', description: "Configure the tenant's Daraja (M-Pesa STK push) credentials" },

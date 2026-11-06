@@ -23,4 +23,6 @@ router.delete('/mpesa-credential', requirePermission('tenant.mpesaStk.update'), 
 router.patch('/stripe-credential', requirePermission('tenant.stripe.update'), validate(tenantSelfValidation.updateStripeCredential), tenantSelfController.updateStripeCredential);
 router.delete('/stripe-credential', requirePermission('tenant.stripe.update'), tenantSelfController.removeStripeCredential);
 
+router.patch('/cash-rounding', requirePermission('tenant.payments.update'), validate(tenantSelfValidation.updateCashRounding), tenantSelfController.updateCashRounding);
+
 export default router;

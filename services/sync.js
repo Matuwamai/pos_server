@@ -1,5 +1,6 @@
 import prisma from '../config/prismaClient.js';
 import locationService from './location.js';
+import { getEffectiveCashRoundingUnit } from '../config/cashRounding.js';
 
 const DEFAULT_LIMIT = 500;
 
@@ -59,17 +60,19 @@ async function pullChanges({ since, locationId, limit = DEFAULT_LIMIT }) {
       logoUrl: true,
       mpesaType: true,
       mpesaShortcode: true,
+      cashRoundingUnit: true,
       updatedAt: true,
       mpesaCredential: { select: { id: true } },
       stripeCredential: { select: { id: true } },
     },
   });
   if (tenant) {
-    const { mpesaCredential, stripeCredential, ...tenantFields } = tenant;
+    const { mpesaCredential, stripeCredential, cashRoundingUnit, ...tenantFields } = tenant;
     entities.tenant = normalise({
       ...tenantFields,
       mpesaStkConfigured: Boolean(mpesaCredential),
       stripeConfigured: Boolean(stripeCredential),
+      effectiveCashRoundingUnit: getEffectiveCashRoundingUnit(tenant.currency, cashRoundingUnit === null ? null : Number(cashRoundingUnit)),
     });
   } else {
     entities.tenant = null;

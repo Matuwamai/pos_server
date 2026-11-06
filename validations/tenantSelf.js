@@ -27,4 +27,12 @@ const updateStripeCredential = {
   }),
 };
 
-export default { updatePayments, updateMpesaCredential, updateStripeCredential };
+// null clears the override back to the currency's own default; 0 explicitly disables
+// cash rounding; any other positive value overrides it with a custom unit.
+const updateCashRounding = {
+  body: z.object({
+    cashRoundingUnit: z.coerce.number().min(0).nullable(),
+  }),
+};
+
+export default { updatePayments, updateMpesaCredential, updateStripeCredential, updateCashRounding };

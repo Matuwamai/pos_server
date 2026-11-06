@@ -5,6 +5,7 @@ import prisma from '../config/prismaClient.js';
 import ApiError from '../utils/ApiError.js';
 import mpesaCredentialService from './mpesaCredential.js';
 import stripeCredentialService from './stripeCredential.js';
+import { getEffectiveCashRoundingUnit } from '../config/cashRounding.js';
 
 
 const UPLOADS_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'uploads');
@@ -25,18 +26,26 @@ const SELF_FIELDS = {
   mpesaShortcode: true,
   mpesaCredential: { select: { environment: true } },
   stripeCredential: { select: { id: true } },
+  cashRoundingUnit: true,
 };
 
 // Never exposes the credential itself — only whether one exists and which
 // environment it targets, so the settings page can show a "configured"
 // state without the secrets ever round-tripping back to a client.
 function present(tenant) {
-  const { mpesaCredential, stripeCredential, ...rest } = tenant;
+  const { mpesaCredential, stripeCredential, cashRoundingUnit, ...rest } = tenant;
+  const cashRoundingUnitOverride = cashRoundingUnit === null ? null : Number(cashRoundingUnit);
   return {
     ...rest,
     mpesaStkConfigured: Boolean(mpesaCredential),
     mpesaStkEnvironment: mpesaCredential?.environment ?? null,
     stripeConfigured: Boolean(stripeCredential),
+    // cashRoundingUnitOverride is null when the tenant hasn't set one — clients that
+    // need the actual unit in effect (not just the raw override) should use
+    // effectiveCashRoundingUnit instead of re-deriving the "null means use the
+    // currency default" logic themselves.
+    cashRoundingUnitOverride,
+    effectiveCashRoundingUnit: getEffectiveCashRoundingUnit(rest.currency, cashRoundingUnitOverride),
   };
 }
 
@@ -121,6 +130,13 @@ async function removeStripeCredential(tenantId) {
   return getMyTenant(tenantId);
 }
 
+// cashRoundingUnit: null clears the override back to the currency's own default (see
+// config/cashRounding.js); 0 explicitly disables cash rounding regardless of the
+// currency default; any other value overrides it.
+async function updateCashRounding(tenantId, { cashRoundingUnit }) {
+  return present(await prisma.tenant.update({ where: { id: tenantId }, data: { cashRoundingUnit }, select: SELF_FIELDS }));
+}
+
 export default {
   getMyTenant,
   updateTenantLogo,
@@ -130,4 +146,5 @@ export default {
   removeMpesaCredential,
   updateStripeCredential,
   removeStripeCredential,
+  updateCashRounding,
 };

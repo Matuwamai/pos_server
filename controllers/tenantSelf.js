@@ -43,6 +43,11 @@ const removeStripeCredential = asyncHandler(async (req, res) => {
   res.status(200).json(tenant);
 });
 
+const updateCashRounding = asyncHandler(async (req, res) => {
+  const tenant = await tenantSelfService.updateCashRounding(req.tenantId, req.body);
+  res.status(200).json(tenant);
+});
+
 export default {
   getMine,
   updateLogo,
@@ -52,4 +57,5 @@ export default {
   removeMpesaCredential,
   updateStripeCredential,
   removeStripeCredential,
+  updateCashRounding,
 };

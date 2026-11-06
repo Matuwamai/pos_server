@@ -14,7 +14,8 @@ import salesSummaryService from './salesSummary.js';
 import { getPagination, buildPaginationMeta } from '../utils/queryHelpers.js';
 import { getTenantId } from '../config/tenantContext.js';
 import { getCurrencyDecimalDigits } from '../config/currencies.js';
-import { round } from '../utils/money.js';
+import { getEffectiveCashRoundingUnit } from '../config/cashRounding.js';
+import { round, roundToNearest } from '../utils/money.js';
 
 const orderInclude = {
   location: { select: { id: true, name: true, timezone: true } },
@@ -32,9 +33,9 @@ const orderInclude = {
   refunds: { include: { items: true } },
 };
 
-async function getCurrentTenantCurrency(tx) {
-  const tenant = await tx.tenant.findUnique({ where: { id: getTenantId() }, select: { currency: true } });
-  return tenant.currency;
+async function getCurrentTenantSettings(tx) {
+  const tenant = await tx.tenant.findUnique({ where: { id: getTenantId() }, select: { currency: true, cashRoundingUnit: true } });
+  return { currency: tenant.currency, cashRoundingUnit: tenant.cashRoundingUnit === null ? null : Number(tenant.cashRoundingUnit) };
 }
 
 async function resolveDefaultTaxRate() {
@@ -240,7 +241,7 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
   const defaultTaxRate = await resolveDefaultTaxRate();
 
   const orderId = await prisma.$transaction(async (tx) => {
-    const tenantCurrency = await getCurrentTenantCurrency(tx);
+    const { currency: tenantCurrency, cashRoundingUnit } = await getCurrentTenantSettings(tx);
     const decimalDigits = getCurrencyDecimalDigits(tenantCurrency);
 
     const pricedItems = [];
@@ -266,10 +267,20 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
     }
     discountTotal = round(discountTotal, decimalDigits);
 
-    const total = round(subtotal - discountTotal + taxTotal, decimalDigits);
-    if (total < 0) {
+    const exactTotal = round(subtotal - discountTotal + taxTotal, decimalDigits);
+    if (exactTotal < 0) {
       throw ApiError.badRequest('Discounts cannot exceed the order subtotal plus tax');
     }
+
+    // Cash rounding ("Swedish rounding") only ever applies to a single cash tender
+    // covering the whole order — never to the subtotal/tax breakdown, and never to a
+    // split payment, where attributing the adjustment to just the cash portion is
+    // ambiguous. See config/cashRounding.js.
+    const isSingleCashPayment = payments.length === 1 && payments[0].method === 'CASH';
+    const effectiveCashRoundingUnit = isSingleCashPayment ? getEffectiveCashRoundingUnit(tenantCurrency, cashRoundingUnit) : 0;
+    const total = roundToNearest(exactTotal, effectiveCashRoundingUnit);
+    const cashRoundingAdjustment = round(total - exactTotal, decimalDigits);
+
     const paymentsTotal = round(payments.reduce((sum, p) => sum + p.amount, 0), decimalDigits);
     if (paymentsTotal < total) {
       throw ApiError.badRequest(`Payments (${paymentsTotal}) do not cover the order total (${total})`);
@@ -288,6 +299,7 @@ async function createOrder(actingUser, { locationId, terminalId, cashDrawerSessi
         subtotal,
         discountTotal,
         taxTotal,
+        cashRoundingAdjustment,
         total,
       },
     });
