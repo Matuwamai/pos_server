@@ -27,6 +27,11 @@ const SELF_FIELDS = {
   mpesaCredential: { select: { environment: true } },
   stripeCredential: { select: { id: true } },
   cashRoundingUnit: true,
+  themeColor: true,
+  receiptFooterMessage: true,
+  receiptShowCustomerName: true,
+  receiptShowCashierName: true,
+  receiptShowLogo: true,
 };
 
 // Never exposes the credential itself — only whether one exists and which
@@ -137,6 +142,25 @@ async function updateCashRounding(tenantId, { cashRoundingUnit }) {
   return present(await prisma.tenant.update({ where: { id: tenantId }, data: { cashRoundingUnit }, select: SELF_FIELDS }));
 }
 
+// themeColor: null (or omitted) resets to the app's signature teal default — the
+// fallback lives client-side (web_app's utils/theme.js) and in services/receipt.js /
+// services/invoiceDocument.js, not here, so this is a plain passthrough.
+async function updateAppearance(tenantId, { themeColor }) {
+  return present(await prisma.tenant.update({ where: { id: tenantId }, data: { themeColor }, select: SELF_FIELDS }));
+}
+
+// receiptFooterMessage: null (or omitted) resets to the hardcoded "Thank you for your
+// business!" fallback used by every renderer (server HTML, desktop/mobile ESC/POS).
+async function updateReceiptSettings(tenantId, { receiptFooterMessage, receiptShowCustomerName, receiptShowCashierName, receiptShowLogo }) {
+  return present(
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { receiptFooterMessage, receiptShowCustomerName, receiptShowCashierName, receiptShowLogo },
+      select: SELF_FIELDS,
+    })
+  );
+}
+
 export default {
   getMyTenant,
   updateTenantLogo,
@@ -147,4 +171,6 @@ export default {
   updateStripeCredential,
   removeStripeCredential,
   updateCashRounding,
+  updateAppearance,
+  updateReceiptSettings,
 };

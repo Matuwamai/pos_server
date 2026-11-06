@@ -48,6 +48,16 @@ const updateCashRounding = asyncHandler(async (req, res) => {
   res.status(200).json(tenant);
 });
 
+const updateAppearance = asyncHandler(async (req, res) => {
+  const tenant = await tenantSelfService.updateAppearance(req.tenantId, req.body);
+  res.status(200).json(tenant);
+});
+
+const updateReceiptSettings = asyncHandler(async (req, res) => {
+  const tenant = await tenantSelfService.updateReceiptSettings(req.tenantId, req.body);
+  res.status(200).json(tenant);
+});
+
 export default {
   getMine,
   updateLogo,
@@ -58,4 +68,6 @@ export default {
   updateStripeCredential,
   removeStripeCredential,
   updateCashRounding,
+  updateAppearance,
+  updateReceiptSettings,
 };

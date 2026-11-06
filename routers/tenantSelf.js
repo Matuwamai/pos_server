@@ -25,4 +25,7 @@ router.delete('/stripe-credential', requirePermission('tenant.stripe.update'), t
 
 router.patch('/cash-rounding', requirePermission('tenant.payments.update'), validate(tenantSelfValidation.updateCashRounding), tenantSelfController.updateCashRounding);
 
+router.patch('/appearance', requirePermission('tenant.branding.update'), validate(tenantSelfValidation.updateAppearance), tenantSelfController.updateAppearance);
+router.patch('/receipt-settings', requirePermission('tenant.branding.update'), validate(tenantSelfValidation.updateReceiptSettings), tenantSelfController.updateReceiptSettings);
+
 export default router;

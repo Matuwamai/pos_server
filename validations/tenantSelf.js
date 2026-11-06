@@ -35,4 +35,29 @@ const updateCashRounding = {
   }),
 };
 
-export default { updatePayments, updateMpesaCredential, updateStripeCredential, updateCashRounding };
+const hexColorRegex = /^#[0-9a-fA-F]{6}$/;
+
+// null (or omitted) resets to the app's signature teal default.
+const updateAppearance = {
+  body: z.object({
+    themeColor: z.string().regex(hexColorRegex, 'Use a 6-digit hex color, e.g. #0f766e').nullable().optional(),
+  }),
+};
+
+const updateReceiptSettings = {
+  body: z.object({
+    receiptFooterMessage: z.string().max(200).nullable().optional(),
+    receiptShowCustomerName: z.boolean().optional(),
+    receiptShowCashierName: z.boolean().optional(),
+    receiptShowLogo: z.boolean().optional(),
+  }),
+};
+
+export default {
+  updatePayments,
+  updateMpesaCredential,
+  updateStripeCredential,
+  updateCashRounding,
+  updateAppearance,
+  updateReceiptSettings,
+};

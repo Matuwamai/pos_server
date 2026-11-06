@@ -17,56 +17,61 @@ model SuperAdmin {
 }
 
 model Tenant {
-  id                   String                   @id @default(uuid())
-  name                 String
-  subdomain            String                   @unique
-  plan                 String                   @default("trial")
-  currency             String                   @default("USD") @db.VarChar(3)
-  cashRoundingUnit     Decimal?                 @db.Decimal(10, 2)
-  status               TenantStatus             @default(ACTIVE)
-  logoUrl              String?
-  mpesaType            MpesaShortcodeType?
-  mpesaShortcode       String?
-  createdAt            DateTime                 @default(now())
-  updatedAt            DateTime                 @updatedAt
-  subscription         Subscription?
-  locations            Location[]
-  terminals            Terminal[]
-  users                User[]
-  employeeShifts       EmployeeShift[]
-  categories           Category[]
-  products             Product[]
-  variants             ProductVariant[]
-  modifierGroups       ModifierGroup[]
-  suppliers            Supplier[]
-  purchaseOrders       PurchaseOrder[]
-  stockTransfers       StockTransfer[]
-  inventoryItems       InventoryItem[]
-  inventoryLogs        InventoryLog[]
-  customerGroups       CustomerGroup[]
-  customers            Customer[]
-  loyaltyProgram       LoyaltyProgram?
-  loyaltyTxns          LoyaltyTransaction[]
-  storeCreditTxns      StoreCreditTransaction[]
-  giftCards            GiftCard[]
-  promotions           Promotion[]
-  taxRates             TaxRate[]
-  orders               Order[]
-  refunds              Refund[]
-  cashDrawerSessions   CashDrawerSession[]
-  auditLogs            AuditLog[]
-  roles                Role[]
-  apiKeys              ApiKey[]
-  dailySalesSummaries  DailySalesSummary[]
-  smsTemplates         SmsTemplate[]
-  smsMessages          SmsMessage[]
-  smsCampaigns         SmsCampaign[]
-  invoices             Invoice[]
-  syncOps              SyncOp[]
-  mpesaCredential      MpesaCredential?
-  mpesaPaymentIntents  MpesaPaymentIntent[]
-  stripeCredential     StripeCredential?
-  stripePaymentIntents StripePaymentIntent[]
+  id                      String                   @id @default(uuid())
+  name                    String
+  subdomain               String                   @unique
+  plan                    String                   @default("trial")
+  currency                String                   @default("USD") @db.VarChar(3)
+  cashRoundingUnit        Decimal?                 @db.Decimal(10, 2)
+  status                  TenantStatus             @default(ACTIVE)
+  logoUrl                 String?
+  themeColor              String?                  @db.VarChar(7)
+  receiptFooterMessage    String?                  @db.VarChar(200)
+  receiptShowCustomerName Boolean                  @default(true)
+  receiptShowCashierName  Boolean                  @default(true)
+  receiptShowLogo         Boolean                  @default(true)
+  mpesaType               MpesaShortcodeType?
+  mpesaShortcode          String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  subscription            Subscription?
+  locations               Location[]
+  terminals               Terminal[]
+  users                   User[]
+  employeeShifts          EmployeeShift[]
+  categories              Category[]
+  products                Product[]
+  variants                ProductVariant[]
+  modifierGroups          ModifierGroup[]
+  suppliers               Supplier[]
+  purchaseOrders          PurchaseOrder[]
+  stockTransfers          StockTransfer[]
+  inventoryItems          InventoryItem[]
+  inventoryLogs           InventoryLog[]
+  customerGroups          CustomerGroup[]
+  customers               Customer[]
+  loyaltyProgram          LoyaltyProgram?
+  loyaltyTxns             LoyaltyTransaction[]
+  storeCreditTxns         StoreCreditTransaction[]
+  giftCards               GiftCard[]
+  promotions              Promotion[]
+  taxRates                TaxRate[]
+  orders                  Order[]
+  refunds                 Refund[]
+  cashDrawerSessions      CashDrawerSession[]
+  auditLogs               AuditLog[]
+  roles                   Role[]
+  apiKeys                 ApiKey[]
+  dailySalesSummaries     DailySalesSummary[]
+  smsTemplates            SmsTemplate[]
+  smsMessages             SmsMessage[]
+  smsCampaigns            SmsCampaign[]
+  invoices                Invoice[]
+  syncOps                 SyncOp[]
+  mpesaCredential         MpesaCredential?
+  mpesaPaymentIntents     MpesaPaymentIntent[]
+  stripeCredential        StripeCredential?
+  stripePaymentIntents    StripePaymentIntent[]
 
   @@index([status])
 }
