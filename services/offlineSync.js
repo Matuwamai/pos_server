@@ -6,7 +6,8 @@ import salesSummaryService from './salesSummary.js';
 import auditLogService from './auditLog.js';
 import orderService from './order.js';
 import { getCurrencyDecimalDigits } from '../config/currencies.js';
-import { round } from '../utils/money.js';
+import { getEffectiveCashRoundingUnit } from '../config/cashRounding.js';
+import { round, roundToNearest } from '../utils/money.js';
 
 
 const uuid = z.string().uuid();
@@ -106,7 +107,7 @@ async function importOfflineOrder(tx, terminal, payload) {
     if (!session || session.locationId !== p.locationId) throw ApiError.badRequest('Cash drawer session not found at this location');
   }
 
-  const tenant = await tx.tenant.findUnique({ where: { id: terminal.tenantId }, select: { currency: true } });
+  const tenant = await tx.tenant.findUnique({ where: { id: terminal.tenantId }, select: { currency: true, cashRoundingUnit: true } });
   const tenantCurrency = tenant.currency;
   const decimalDigits = getCurrencyDecimalDigits(tenantCurrency);
   let subtotal = 0;
@@ -125,7 +126,19 @@ async function importOfflineOrder(tx, terminal, payload) {
   if (subtotal !== round(p.subtotal, decimalDigits) || taxTotal !== round(p.taxTotal, decimalDigits) || discountTotal !== round(p.discountTotal, decimalDigits)) {
     throw ApiError.badRequest('Sale subtotals do not match its lines');
   }
-  const total = round(subtotal - discountTotal + taxTotal, decimalDigits);
+  const exactTotal = round(subtotal - discountTotal + taxTotal, decimalDigits);
+
+  // Mirrors services/order.js's createOrder exactly: cash rounding only ever applies
+  // to a single cash tender covering the whole sale — the offline client (desktop/
+  // mobile) must compute the identical rounded total when building its own payload,
+  // or this equality check below fails and the sync is rejected.
+  const isSingleCashPayment = p.payments.length === 1 && p.payments[0].method === 'CASH';
+  const effectiveCashRoundingUnit = isSingleCashPayment
+    ? getEffectiveCashRoundingUnit(tenantCurrency, tenant.cashRoundingUnit === null ? null : Number(tenant.cashRoundingUnit))
+    : 0;
+  const total = roundToNearest(exactTotal, effectiveCashRoundingUnit);
+  const cashRoundingAdjustment = round(total - exactTotal, decimalDigits);
+
   if (total !== round(p.total, decimalDigits)) throw ApiError.badRequest('Sale total does not match its lines');
   const paid = round(p.payments.reduce((sum, pay) => sum + pay.amount, 0), decimalDigits);
   if (paid < total) throw ApiError.badRequest(`Payments (${paid}) do not cover the sale total (${total})`);
@@ -148,6 +161,7 @@ async function importOfflineOrder(tx, terminal, payload) {
       subtotal,
       discountTotal,
       taxTotal,
+      cashRoundingAdjustment,
       total,
     },
   });
