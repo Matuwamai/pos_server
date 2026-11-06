@@ -28,4 +28,7 @@ export default {
   mpesa: {
     callbackBaseUrl: process.env.MPESA_CALLBACK_BASE_URL || null,
   },
+  stripe: {
+    webhookBaseUrl: process.env.STRIPE_WEBHOOK_BASE_URL || null,
+  },
 };
